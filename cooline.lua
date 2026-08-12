@@ -2,13 +2,15 @@
 -- Clean single-file rebuild for WoW 1.12.1.
 -- This stage adds the real nonlinear Cooline timeline and smooth spell movement.
 
-local VERSION = "1.9.1-timeline"
+local VERSION = "1.9.1-appearance"
 
 local DEFAULTS = {
 	width = 360,
 	height = 18,
 	x = 0,
 	y = -240,
+	vertical = false,
+	reverse = false,
 	inactivealpha = 0.5,
 	activealpha = 1.0,
 }
@@ -48,8 +50,33 @@ local function InitialiseSettings()
 	end
 end
 
+
+local function SelectVisualScope(useCharacter)
+	if useCharacter then
+		if not CoolineCharDB.visuals then
+			CoolineCharDB.visuals = {}
+			ApplyDefaults(CoolineCharDB.visuals, CoolineDB.visuals)
+		end
+		ApplyDefaults(CoolineCharDB.visuals, DEFAULTS)
+		CoolineCharDB.useCharacterVisuals = true
+		visuals = CoolineCharDB.visuals
+	else
+		CoolineCharDB.useCharacterVisuals = false
+		visuals = CoolineDB.visuals
+	end
+end
+
 local function TimelineOffset(timeLeft)
-	local section = visuals.width / 6
+	local span
+	local section
+
+	if visuals.vertical then
+		span = visuals.height
+	else
+		span = visuals.width
+	end
+
+	section = span / 6
 
 	if timeLeft <= 0 then
 		return 0
@@ -67,20 +94,117 @@ local function TimelineOffset(timeLeft)
 		return section * (5 + ((timeLeft - 120) / 240))
 	end
 
-	return visuals.width
+	return span
+end
+
+local function PlaceOnTimeline(frame, offset)
+	frame:ClearAllPoints()
+
+	if visuals.vertical then
+		if visuals.reverse then
+			frame:SetPoint("CENTER", bar, "BOTTOM", 0, visuals.height - offset)
+		else
+			frame:SetPoint("CENTER", bar, "BOTTOM", 0, offset)
+		end
+	else
+		if visuals.reverse then
+			frame:SetPoint("CENTER", bar, "LEFT", visuals.width - offset, 0)
+		else
+			frame:SetPoint("CENTER", bar, "LEFT", offset, 0)
+		end
+	end
+end
+
+local function LayoutLabels()
+	local span = visuals.vertical and visuals.height or visuals.width
+	local section = span / 6
+	local i
+	local data
+	local offset
+
+	for i, data in ipairs(bar.labels) do
+		offset = data.offset * section
+		data.frame:ClearAllPoints()
+
+		if visuals.vertical then
+			if data.edge == "START" then
+				if visuals.reverse then
+					data.frame:SetPoint("TOP", bar, "TOP", 0, -1)
+				else
+					data.frame:SetPoint("BOTTOM", bar, "BOTTOM", 0, 1)
+				end
+			elseif data.edge == "END" then
+				if visuals.reverse then
+					data.frame:SetPoint("BOTTOM", bar, "BOTTOM", 0, 1)
+				else
+					data.frame:SetPoint("TOP", bar, "TOP", 0, -1)
+				end
+			else
+				if visuals.reverse then
+					data.frame:SetPoint("CENTER", bar, "BOTTOM", 0, visuals.height - offset)
+				else
+					data.frame:SetPoint("CENTER", bar, "BOTTOM", 0, offset)
+				end
+			end
+		else
+			if data.edge == "START" then
+				if visuals.reverse then
+					data.frame:SetPoint("RIGHT", bar, "RIGHT", -1, 0)
+				else
+					data.frame:SetPoint("LEFT", bar, "LEFT", 1, 0)
+				end
+			elseif data.edge == "END" then
+				if visuals.reverse then
+					data.frame:SetPoint("LEFT", bar, "LEFT", 1, 0)
+				else
+					data.frame:SetPoint("RIGHT", bar, "RIGHT", -1, 0)
+				end
+			else
+				if visuals.reverse then
+					data.frame:SetPoint("CENTER", bar, "LEFT", visuals.width - offset, 0)
+				else
+					data.frame:SetPoint("CENTER", bar, "LEFT", offset, 0)
+				end
+			end
+		end
+	end
+end
+
+local function ApplyVisualLayout()
+	local size
+	local name, cd
+
+	bar:SetWidth(visuals.width)
+	bar:SetHeight(visuals.height)
+	bar:ClearAllPoints()
+	bar:SetPoint("CENTER", UIParent, "CENTER", visuals.x, visuals.y)
+
+	if visuals.vertical then
+		size = visuals.width + 4
+		bar.bg:SetTexCoord(1, 0, 0, 0, 1, 1, 0, 1)
+	else
+		size = visuals.height + 4
+		bar.bg:SetTexCoord(0, 1, 0, 1)
+	end
+
+	for name, cd in pairs(cooldowns) do
+		cd:SetWidth(size)
+		cd:SetHeight(size)
+	end
+
+	LayoutLabels()
 end
 
 local function BuildBar()
 	local s = visuals
-	local section = s.width / 6
 	local labels = {
-		{ "0", 0, "LEFT" },
-		{ "1", section, "CENTER" },
-		{ "3", section * 2, "CENTER" },
-		{ "10", section * 3, "CENTER" },
-		{ "30", section * 4, "CENTER" },
-		{ "2m", section * 5, "CENTER" },
-		{ "6m", section * 6, "RIGHT" },
+		{ text = "0", offset = 0, edge = "START" },
+		{ text = "1", offset = 1 },
+		{ text = "3", offset = 2 },
+		{ text = "10", offset = 3 },
+		{ text = "30", offset = 4 },
+		{ text = "2m", offset = 5 },
+		{ text = "6m", offset = 6, edge = "END" },
 	}
 	local i, data, fs
 
@@ -106,25 +230,24 @@ local function BuildBar()
 	})
 	bar.border:SetBackdropBorderColor(1, 1, 1, 1)
 
+	bar.labels = {}
+
 	for i, data in ipairs(labels) do
 		fs = bar:CreateFontString(nil, "OVERLAY")
 		fs:SetFont([[Fonts\FRIZQT__.TTF]], 10)
 		fs:SetTextColor(1, 1, 1, 0.8)
 		fs:SetShadowColor(0, 0, 0, 0.5)
 		fs:SetShadowOffset(1, -1)
-		fs:SetText(data[1])
+		fs:SetText(data.text)
 		fs:SetWidth(30)
 		fs:SetHeight(12)
 		fs:SetJustifyH("CENTER")
 
-		if data[3] == "LEFT" then
-			fs:SetPoint("LEFT", bar, "LEFT", 1, 0)
-		elseif data[3] == "RIGHT" then
-			fs:SetPoint("RIGHT", bar, "RIGHT", -1, 0)
-		else
-			fs:SetPoint("CENTER", bar, "LEFT", data[2], 0)
-		end
+		data.frame = fs
+		bar.labels[i] = data
 	end
+
+	ApplyVisualLayout()
 
 	bar:SetScript("OnDragStart", function()
 		if IsAltKeyDown() then
@@ -169,7 +292,11 @@ local function EnsureCooldown(name)
 
 	if not cd then
 		cd = CreateFrame("Frame", nil, bar.border)
-		size = visuals.height + 4
+		if visuals.vertical then
+			size = visuals.width + 4
+		else
+			size = visuals.height + 4
+		end
 		cd:SetWidth(size)
 		cd:SetHeight(size)
 		cd:SetBackdrop({
@@ -247,8 +374,7 @@ local function Render()
 				cd:SetFrameLevel(level)
 				level = level + 1
 
-				cd:ClearAllPoints()
-				cd:SetPoint("CENTER", bar, "LEFT", offset, 0)
+				PlaceOnTimeline(cd, offset)
 				cd:SetAlpha(1)
 				cd:Show()
 			else
@@ -261,9 +387,281 @@ local function Render()
 	bar:SetAlpha(anyActive and visuals.activealpha or visuals.inactivealpha)
 end
 
+
+-- ============================================================================
+-- Appearance options
+-- ============================================================================
+
+local optionsFrame
+local sliderCount = 0
+
+local function MakeButton(parent, text, width)
+	local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+	button:SetWidth(width)
+	button:SetHeight(22)
+	button:SetText(text)
+	return button
+end
+
+local function MakeText(parent, text, x, y, size, title)
+	local fs = parent:CreateFontString(nil, "OVERLAY")
+	fs:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+	fs:SetFont([[Fonts\FRIZQT__.TTF]], size or 11)
+	if title then
+		fs:SetTextColor(1, 0.82, 0)
+	else
+		fs:SetTextColor(0.9, 0.9, 0.9)
+	end
+	fs:SetText(text or "")
+	return fs
+end
+
+local function MakeCheckbox(parent, text, x, y)
+	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+	local label
+
+	check:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+	check:SetWidth(24)
+	check:SetHeight(24)
+
+	label = check:CreateFontString(nil, "OVERLAY")
+	label:SetPoint("LEFT", check, "RIGHT", 2, 1)
+	label:SetFont([[Fonts\FRIZQT__.TTF]], 11)
+	label:SetTextColor(0.9, 0.9, 0.9)
+	label:SetText(text)
+	check.label = label
+
+	return check
+end
+
+local function MakeSlider(parent, text, x, y, width, low, high, step)
+	local name
+	local slider
+
+	sliderCount = sliderCount + 1
+	name = "CoolineAppearanceSlider" .. sliderCount
+
+	slider = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
+	slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+	slider:SetWidth(width)
+	slider:SetHeight(16)
+	slider:SetMinMaxValues(low, high)
+	slider:SetValueStep(step)
+
+	getglobal(name .. "Text"):SetText(text)
+	getglobal(name .. "Low"):SetText(tostring(low))
+	getglobal(name .. "High"):SetText(tostring(high))
+
+	slider.valueText = parent:CreateFontString(nil, "OVERLAY")
+	slider.valueText:SetPoint("LEFT", slider, "RIGHT", 10, 0)
+	slider.valueText:SetFont([[Fonts\FRIZQT__.TTF]], 11)
+	slider.valueText:SetTextColor(0.9, 0.9, 0.9)
+
+	return slider
+end
+
+local function RefreshOptions()
+	if not optionsFrame then
+		return
+	end
+
+	optionsFrame.updating = true
+
+	optionsFrame.characterVisuals:SetChecked(CoolineCharDB.useCharacterVisuals and 1 or nil)
+	if CoolineCharDB.useCharacterVisuals then
+		optionsFrame.scope:SetText("Editing: this character")
+	else
+		optionsFrame.scope:SetText("Editing: account-wide")
+	end
+
+	optionsFrame.width:SetValue(visuals.width)
+	optionsFrame.width.valueText:SetText(tostring(visuals.width))
+
+	optionsFrame.height:SetValue(visuals.height)
+	optionsFrame.height.valueText:SetText(tostring(visuals.height))
+
+	optionsFrame.vertical:SetChecked(visuals.vertical and 1 or nil)
+	optionsFrame.reverse:SetChecked(visuals.reverse and 1 or nil)
+
+	optionsFrame.activeAlpha:SetValue(floor((visuals.activealpha * 100) + 0.5))
+	optionsFrame.activeAlpha.valueText:SetText(floor((visuals.activealpha * 100) + 0.5) .. "%")
+
+	optionsFrame.inactiveAlpha:SetValue(floor((visuals.inactivealpha * 100) + 0.5))
+	optionsFrame.inactiveAlpha.valueText:SetText(floor((visuals.inactivealpha * 100) + 0.5) .. "%")
+
+	optionsFrame.updating = false
+end
+
+local function BuildOptions()
+	local close
+	local panel
+	local reset
+	local done
+
+	if optionsFrame then
+		return
+	end
+
+	optionsFrame = CreateFrame("Frame", "CoolineOptionsFrame", UIParent)
+	optionsFrame:SetWidth(500)
+	optionsFrame:SetHeight(350)
+	optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+	optionsFrame:SetFrameStrata("DIALOG")
+	optionsFrame:SetMovable(true)
+	optionsFrame:EnableMouse(true)
+	optionsFrame:RegisterForDrag("LeftButton")
+	optionsFrame:SetScript("OnDragStart", function() this:StartMoving() end)
+	optionsFrame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+	optionsFrame:SetBackdrop({
+		bgFile = [[Interface\DialogFrame\UI-DialogBox-Background]],
+		edgeFile = [[Interface\DialogFrame\UI-DialogBox-Border]],
+		tile = true,
+		tileSize = 32,
+		edgeSize = 24,
+		insets = { left = 6, right = 6, top = 6, bottom = 6 },
+	})
+	optionsFrame:SetBackdropColor(0.08, 0.10, 0.13, 0.98)
+	optionsFrame:SetBackdropBorderColor(0.45, 0.52, 0.60, 1)
+	optionsFrame:Hide()
+
+	MakeText(optionsFrame, "Cooline", 18, -16, 14, true)
+	MakeText(optionsFrame, "v1.9.1", 75, -18, 10, false)
+
+	close = MakeButton(optionsFrame, "X", 24)
+	close:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -12, -11)
+	close:SetScript("OnClick", function() optionsFrame:Hide() end)
+
+	panel = CreateFrame("Frame", nil, optionsFrame)
+	panel:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 16, -48)
+	panel:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -16, 42)
+	panel:SetBackdrop({
+		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
+		edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
+		tile = true,
+		tileSize = 16,
+		edgeSize = 12,
+		insets = { left = 3, right = 3, top = 3, bottom = 3 },
+	})
+	panel:SetBackdropColor(0.04, 0.05, 0.07, 0.88)
+	panel:SetBackdropBorderColor(0.30, 0.36, 0.43, 1)
+
+	MakeText(panel, "Appearance", 18, -18, 14, true)
+	optionsFrame.scope = MakeText(panel, "", 18, -45, 11, false)
+
+	optionsFrame.characterVisuals = MakeCheckbox(
+		panel,
+		"Use character-specific appearance",
+		18,
+		-67
+	)
+
+	MakeText(panel, "Size", 18, -108, 12, true)
+	optionsFrame.width = MakeSlider(panel, "Width", 28, -140, 240, 120, 720, 1)
+	optionsFrame.height = MakeSlider(panel, "Height", 28, -188, 240, 8, 48, 1)
+
+	MakeText(panel, "Layout", 320, -108, 12, true)
+	optionsFrame.vertical = MakeCheckbox(panel, "Vertical", 320, -137)
+	optionsFrame.reverse = MakeCheckbox(panel, "Reverse direction", 320, -168)
+
+	MakeText(panel, "Opacity", 18, -232, 12, true)
+	optionsFrame.activeAlpha = MakeSlider(panel, "Active", 28, -264, 240, 10, 100, 5)
+	optionsFrame.inactiveAlpha = MakeSlider(panel, "Inactive", 28, -312, 240, 0, 100, 5)
+
+	reset = MakeButton(optionsFrame, "Reset Appearance", 130)
+	reset:SetPoint("BOTTOMLEFT", optionsFrame, "BOTTOMLEFT", 18, 12)
+
+	done = MakeButton(optionsFrame, "Close", 80)
+	done:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -18, 12)
+	done:SetScript("OnClick", function() optionsFrame:Hide() end)
+
+	optionsFrame.characterVisuals:SetScript("OnClick", function()
+		SelectVisualScope(this:GetChecked() and true or false)
+		ApplyVisualLayout()
+		RefreshOptions()
+	end)
+
+	optionsFrame.width:SetScript("OnValueChanged", function()
+		if optionsFrame.updating then return end
+		visuals.width = floor(this:GetValue() + 0.5)
+		this.valueText:SetText(tostring(visuals.width))
+		ApplyVisualLayout()
+	end)
+
+	optionsFrame.height:SetScript("OnValueChanged", function()
+		if optionsFrame.updating then return end
+		visuals.height = floor(this:GetValue() + 0.5)
+		this.valueText:SetText(tostring(visuals.height))
+		ApplyVisualLayout()
+	end)
+
+	optionsFrame.vertical:SetScript("OnClick", function()
+		visuals.vertical = this:GetChecked() and true or false
+		ApplyVisualLayout()
+	end)
+
+	optionsFrame.reverse:SetScript("OnClick", function()
+		visuals.reverse = this:GetChecked() and true or false
+		ApplyVisualLayout()
+	end)
+
+	optionsFrame.activeAlpha:SetScript("OnValueChanged", function()
+		local value
+		if optionsFrame.updating then return end
+		value = floor(this:GetValue() + 0.5)
+		visuals.activealpha = value / 100
+		this.valueText:SetText(value .. "%")
+	end)
+
+	optionsFrame.inactiveAlpha:SetScript("OnValueChanged", function()
+		local value
+		if optionsFrame.updating then return end
+		value = floor(this:GetValue() + 0.5)
+		visuals.inactivealpha = value / 100
+		this.valueText:SetText(value .. "%")
+	end)
+
+	reset:SetScript("OnClick", function()
+		local x = visuals.x
+		local y = visuals.y
+
+		if CoolineCharDB.useCharacterVisuals then
+			CoolineCharDB.visuals = {}
+			ApplyDefaults(CoolineCharDB.visuals, DEFAULTS)
+			visuals = CoolineCharDB.visuals
+		else
+			CoolineDB.visuals = {}
+			ApplyDefaults(CoolineDB.visuals, DEFAULTS)
+			visuals = CoolineDB.visuals
+		end
+
+		visuals.x = x
+		visuals.y = y
+
+		ApplyVisualLayout()
+		RefreshOptions()
+	end)
+end
+
+local function ToggleOptions()
+	BuildOptions()
+
+	if optionsFrame:IsShown() then
+		optionsFrame:Hide()
+	else
+		RefreshOptions()
+		optionsFrame:Show()
+	end
+end
+
+SLASH_COOLINE1 = "/cooline"
+SlashCmdList["COOLINE"] = function(msg)
+	ToggleOptions()
+end
+
 local function OnVariablesLoaded()
 	InitialiseSettings()
 	BuildBar()
+	BuildOptions()
 	ScanSpells()
 
 	bar:RegisterEvent("SPELL_UPDATE_COOLDOWN")
