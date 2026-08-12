@@ -124,6 +124,20 @@ local function set_character_visuals(enabled)
 	select_visual_settings()
 end
 
+local cooline = CreateFrame('Button', nil, UIParent)
+cooline:SetScript('OnEvent', function()
+	this[event]()
+end)
+cooline:RegisterEvent('VARIABLES_LOADED')
+
+local frame_pool = {}
+local cooldowns = {}
+
+function cooline.hyperlink_name(hyperlink)
+    local _, _, name = strfind(hyperlink, '|Hitem:%d+:%d+:%d+:%d+|h[[]([^]]+)[]]|h')
+    return name
+end
+
 local function list_contains_name(list, name)
 	if not name then
 		return false
@@ -138,19 +152,6 @@ local function list_contains_name(list, name)
 	return false
 end
 
-local cooline = CreateFrame('Button', nil, UIParent)
-cooline:SetScript('OnEvent', function()
-	this[event]()
-end)
-cooline:RegisterEvent('VARIABLES_LOADED')
-
-local frame_pool = {}
-local cooldowns = {}
-
-function cooline.hyperlink_name(hyperlink)
-    local _, _, name = strfind(hyperlink, '|Hitem:%d+:%d+:%d+:%d+|h[[]([^]]+)[]]|h')
-    return name
-end
 
 function cooline.detect_cooldowns()
 	
@@ -417,22 +418,11 @@ function cooline.apply_visual_settings()
 	cooline:ClearAllPoints()
 	cooline:SetPoint('CENTER', cooline_theme.x, cooline_theme.y)
 
-	cooline.bg:SetTexture(cooline_theme.statusbar)
-	cooline.bg:SetVertexColor(unpack(cooline_theme.bgcolor))
 	if cooline_theme.vertical then
 		cooline.bg:SetTexCoord(1, 0, 0, 0, 1, 1, 0, 1)
 	else
 		cooline.bg:SetTexCoord(0, 1, 0, 1)
 	end
-
-	cooline.border:ClearAllPoints()
-	cooline.border:SetPoint('TOPLEFT', -cooline_theme.borderinset, cooline_theme.borderinset)
-	cooline.border:SetPoint('BOTTOMRIGHT', cooline_theme.borderinset, -cooline_theme.borderinset)
-	cooline.border:SetBackdrop({
-		edgeFile = cooline_theme.border,
-		edgeSize = cooline_theme.bordersize,
-	})
-	cooline.border:SetBackdropBorderColor(unpack(cooline_theme.bordercolor))
 
 	cooline.section = (cooline_theme.vertical and cooline_theme.height or cooline_theme.width) / 6
 	cooline.icon_size = (cooline_theme.vertical and cooline_theme.width or cooline_theme.height) + cooline_theme.iconoutset * 2
