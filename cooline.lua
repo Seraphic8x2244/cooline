@@ -1,10 +1,123 @@
+-- Cooline 1.9.0
+-- Based on shirsig's Cooline for WoW 1.12.1.
+--
+-- Settings model:
+--   CoolineDB     = account-wide visual settings
+--   CoolineCharDB = per-character filters and optional visual override
+
+local COOLINE_VERSION = "1.9.0"
+
+local factory_visuals = {
+	vertical = false,
+	reverse = false,
+	width = 360,
+	height = 18,
+	x = 0,
+	y = -240,
+	statusbar = [[Interface\TargetingFrame\UI-StatusBar]],
+	bgcolor = { 0, 0, 0, 0.5 },
+	border = [[Interface\DialogFrame\UI-DialogBox-Border]],
+	bordersize = 16,
+	borderinset = 4,
+	bordercolor = { 1, 1, 1, 1 },
+	iconoutset = 2,
+	font = [[Fonts\FRIZQT__.TTF]],
+	fontsize = 10,
+	fontcolor = { 1, 1, 1, 0.8 },
+	spellcolor = { 0.8, 0.4, 0, 1 },
+	nospellcolor = { 0, 0, 0, 1 },
+	inactivealpha = 0.5,
+	activealpha = 1.0,
+	treshold = 3.0,
+}
+
+local function copy_table(source)
+	local result = {}
+	for key, value in pairs(source) do
+		if type(value) == "table" then
+			result[key] = copy_table(value)
+		else
+			result[key] = value
+		end
+	end
+	return result
+end
+
+local function apply_defaults(target, defaults)
+	for key, value in pairs(defaults) do
+		if target[key] == nil then
+			if type(value) == "table" then
+				target[key] = copy_table(value)
+			else
+				target[key] = value
+			end
+		elseif type(value) == "table" and type(target[key]) == "table" then
+			apply_defaults(target[key], value)
+		end
+	end
+end
+
+-- Account-wide SavedVariables.
+CoolineDB = CoolineDB or {}
+CoolineDB.visuals = CoolineDB.visuals or {}
+apply_defaults(CoolineDB.visuals, factory_visuals)
+
+-- Per-character SavedVariables.
+CoolineCharDB = CoolineCharDB or {}
+
+if CoolineCharDB.useCharacterVisuals == nil then
+	CoolineCharDB.useCharacterVisuals = false
+end
+
+CoolineCharDB.filters = CoolineCharDB.filters or {}
+if CoolineCharDB.filters.mode == nil then
+	CoolineCharDB.filters.mode = "blacklist"
+end
+if CoolineCharDB.filters.blacklist == nil then
+	CoolineCharDB.filters.blacklist = { "Hearthstone" }
+end
+if CoolineCharDB.filters.whitelist == nil then
+	CoolineCharDB.filters.whitelist = {}
+end
+
+-- A character visual profile is only created when the character actually
+-- opts into character-specific visuals.
+if CoolineCharDB.useCharacterVisuals and not CoolineCharDB.visuals then
+	CoolineCharDB.visuals = copy_table(CoolineDB.visuals)
+end
+
+local function get_visual_settings()
+	if CoolineCharDB.useCharacterVisuals then
+		if not CoolineCharDB.visuals then
+			CoolineCharDB.visuals = copy_table(CoolineDB.visuals)
+		end
+		apply_defaults(CoolineCharDB.visuals, factory_visuals)
+		return CoolineCharDB.visuals
+	end
+	return CoolineDB.visuals
+end
+
+local cooline_theme = get_visual_settings()
+
+local function list_contains_name(list, name)
+	if not name then
+		return false
+	end
+
+	for _, listed_name in ipairs(list) do
+		if strupper(name) == strupper(listed_name) then
+			return true
+		end
+	end
+
+	return false
+end
+
 local cooline = CreateFrame('Button', nil, UIParent)
 cooline:SetScript('OnEvent', function()
 	this[event]()
 end)
 cooline:RegisterEvent('VARIABLES_LOADED')
-
-cooline_settings = { x = 0, y = -240 }
 
 local frame_pool = {}
 local cooldowns = {}
@@ -17,8 +130,17 @@ end
 function cooline.detect_cooldowns()
 	
 	local function start_cooldown(name, texture, start_time, duration, is_spell)
-		for _, ignored_name in cooline_ignore_list do
-			if strupper(name) == strupper(ignored_name) then
+		local filters = CoolineCharDB.filters
+		local listed
+
+		if filters.mode == "whitelist" then
+			listed = list_contains_name(filters.whitelist, name)
+			if not listed then
+				return
+			end
+		else
+			listed = list_contains_name(filters.blacklist, name)
+			if listed then
 				return
 			end
 		end
@@ -109,7 +231,7 @@ end
 
 function cooline.cooldown_frame()
 	local frame = CreateFrame('Frame', nil, cooline.border)
-	frame:SetBackdrop({ bgFile=[[Interface\AddOns\cooline\backdrop.tga]] })
+	frame:SetBackdrop({ bgFile=[[Interface\AddOns\cooline\artwork\backdrop.tga]] })
 	frame.icon = frame:CreateTexture(nil, 'ARTWORK')
 	frame.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 	frame.icon:SetPoint('TOPLEFT', 1, -1)
@@ -261,7 +383,7 @@ function cooline.VARIABLES_LOADED()
 		this:StopMovingOrSizing()
 		local x, y = this:GetCenter()
 		local ux, uy = UIParent:GetCenter()
-		cooline_settings.x, cooline_settings.y = floor(x - ux + 0.5), floor(y - uy + 0.5)
+		cooline_theme.x, cooline_theme.y = floor(x - ux + 0.5), floor(y - uy + 0.5)
 		this.dragging = false
 	end
 	cooline:SetScript('OnDragStart', function()
@@ -281,7 +403,7 @@ function cooline.VARIABLES_LOADED()
 
 	cooline:SetWidth(cooline_theme.width)
 	cooline:SetHeight(cooline_theme.height)
-	cooline:SetPoint('CENTER', cooline_settings.x, cooline_settings.y)
+	cooline:SetPoint('CENTER', cooline_theme.x, cooline_theme.y)
 	
 	cooline.bg = cooline:CreateTexture(nil, 'ARTWORK')
 	cooline.bg:SetTexture(cooline_theme.statusbar)
@@ -322,7 +444,7 @@ function cooline.VARIABLES_LOADED()
 	
 	cooline.detect_cooldowns()
 
-	DEFAULT_CHAT_FRAME:AddMessage('|c00ffff00' .. COOLINE_LOADED_MESSAGE .. '|r');
+	DEFAULT_CHAT_FRAME:AddMessage('|c00ffff00Cooline ' .. COOLINE_VERSION .. ' loaded: move the Cooline bar by holding <alt> while dragging it with left mouse button.|r');
 end
 
 function cooline.BAG_UPDATE_COOLDOWN()
