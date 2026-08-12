@@ -1,6 +1,6 @@
 ## Interface: 11200
 ## Title: Cooline
-## Notes: Lightweight cooldown timeline for World of Warcraft 1.12.1
+## Notes: Cooline 1.9.1 core test
 ## Version: 1.9.1
 ## SavedVariables: CoolineDB
 ## SavedVariablesPerCharacter: CoolineCharDB
