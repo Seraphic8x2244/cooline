@@ -1,11 +1,12 @@
 -- Cooline 1.9.5
 
-local VERSION = "1.9.5"
+local VERSION = GetAddOnMetadata("Cooline", "Version") or "Unknown"
 
 local DEFAULTS = {
 	length = 360,
 	width = 18,
 	iconoversize = 4,
+	style = "classic",
 	x = 0,
 	y = -240,
 	vertical = false,
@@ -13,6 +14,46 @@ local DEFAULTS = {
 	inactivealpha = 0.5,
 	activealpha = 1.0,
 }
+
+local STYLE_PRESETS = {
+	classic = {
+		name = "Classic",
+		barTexture = [[Interface\TargetingFrame\UI-StatusBar]],
+		barColor = { 0, 0, 0, 0.5 },
+		borderTexture = [[Interface\DialogFrame\UI-DialogBox-Border]],
+		borderSize = 16,
+		borderInset = 4,
+		borderColor = { 1, 1, 1, 1 },
+	},
+	flat = {
+		name = "Flat",
+		barTexture = [[Interface\Tooltips\UI-Tooltip-Background]],
+		barColor = { 0.10, 0.10, 0.10, 0.85 },
+		borderTexture = [[Interface\Tooltips\UI-Tooltip-Border]],
+		borderSize = 10,
+		borderInset = 2,
+		borderColor = { 0.55, 0.55, 0.55, 1 },
+	},
+	dark = {
+		name = "Dark",
+		barTexture = [[Interface\TargetingFrame\UI-StatusBar]],
+		barColor = { 0.02, 0.02, 0.02, 0.90 },
+		borderTexture = [[Interface\Tooltips\UI-Tooltip-Border]],
+		borderSize = 10,
+		borderInset = 2,
+		borderColor = { 0.20, 0.20, 0.20, 1 },
+	},
+	borderless = {
+		name = "Borderless",
+		barTexture = [[Interface\TargetingFrame\UI-StatusBar]],
+		barColor = { 0, 0, 0, 0.65 },
+		borderTexture = [[Interface\Tooltips\UI-Tooltip-Border]],
+		borderSize = 8,
+		borderInset = 0,
+		borderColor = { 0, 0, 0, 0 },
+	},
+}
+
 
 local bar = CreateFrame("Frame", "CoolineBar", UIParent)
 local cooldowns = {}
@@ -91,6 +132,13 @@ local function InitialiseSettings()
 	end
 	if CoolineCharDB.itemFilters.whitelist == nil then
 		CoolineCharDB.itemFilters.whitelist = {}
+	end
+
+	if CoolineCharDB.spellIconOverride == nil then
+		CoolineCharDB.spellIconOverride = false
+	end
+	if CoolineCharDB.itemIconOverride == nil then
+		CoolineCharDB.itemIconOverride = false
 	end
 
 	if CoolineCharDB.useCharacterVisuals then
@@ -249,6 +297,47 @@ if OriginalUseInventoryItem then
 end
 
 
+
+local function GetStylePreset()
+	return STYLE_PRESETS[visuals.style] or STYLE_PRESETS.classic
+end
+
+local function ApplyBarStyle()
+	local style
+
+	if not bar.bg or not bar.border then
+		return
+	end
+
+	style = GetStylePreset()
+
+	bar.bg:SetTexture(style.barTexture)
+	bar.bg:SetVertexColor(unpack(style.barColor))
+
+	bar.border:ClearAllPoints()
+	bar.border:SetPoint("TOPLEFT", bar, "TOPLEFT", -style.borderInset, style.borderInset)
+	bar.border:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", style.borderInset, -style.borderInset)
+	bar.border:SetBackdrop({
+		edgeFile = style.borderTexture,
+		edgeSize = style.borderSize,
+	})
+	bar.border:SetBackdropBorderColor(unpack(style.borderColor))
+end
+
+local function GetIconOversizeForKey(key)
+	if string.sub(key, 1, 6) == "spell:" and CoolineCharDB.spellIconOverride then
+		return CoolineCharDB.spellIconOversize or visuals.iconoversize
+	elseif string.sub(key, 1, 5) == "item:" and CoolineCharDB.itemIconOverride then
+		return CoolineCharDB.itemIconOversize or visuals.iconoversize
+	end
+
+	return visuals.iconoversize
+end
+
+local function GetIconSizeForKey(key)
+	return max(2, visuals.width + GetIconOversizeForKey(key))
+end
+
 local function TimelineOffset(timeLeft)
 	local span = visuals.length
 	local section = span / 6
@@ -345,7 +434,6 @@ local function LayoutLabels()
 end
 
 local function ApplyVisualLayout()
-	local size = max(2, visuals.width + visuals.iconoversize)
 	local name, cd
 
 	bar:ClearAllPoints()
@@ -361,13 +449,17 @@ local function ApplyVisualLayout()
 		bar.bg:SetTexCoord(0, 1, 0, 1)
 	end
 
+	ApplyBarStyle()
+
 	for name, cd in pairs(cooldowns) do
+		local size = GetIconSizeForKey(name)
 		cd:SetWidth(size)
 		cd:SetHeight(size)
 	end
 
 	LayoutLabels()
 end
+
 local function BuildBar()
 	local s = visuals
 	local labels = {
@@ -394,17 +486,8 @@ local function BuildBar()
 
 	bar.bg = bar:CreateTexture(nil, "BACKGROUND")
 	bar.bg:SetAllPoints(bar)
-	bar.bg:SetTexture([[Interface\TargetingFrame\UI-StatusBar]])
-	bar.bg:SetVertexColor(0, 0, 0, 0.5)
 
 	bar.border = CreateFrame("Frame", nil, bar)
-	bar.border:SetPoint("TOPLEFT", bar, "TOPLEFT", -4, 4)
-	bar.border:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 4, -4)
-	bar.border:SetBackdrop({
-		edgeFile = [[Interface\DialogFrame\UI-DialogBox-Border]],
-		edgeSize = 16,
-	})
-	bar.border:SetBackdropBorderColor(1, 1, 1, 1)
 
 	bar.labels = {}
 
@@ -480,7 +563,7 @@ local function EnsureCooldown(key)
 
 	if not cd then
 		cd = CreateFrame("Frame", nil, bar.border)
-		size = max(2, visuals.width + visuals.iconoversize)
+		size = GetIconSizeForKey(key)
 		cd:SetWidth(size)
 		cd:SetHeight(size)
 		cd:SetBackdrop({
@@ -781,10 +864,11 @@ end
 -- ============================================================================
 
 local optionsFrame
+local RefreshAppearanceOptions
 local sliderCount = 0
 local SPELL_ROW_HEIGHT = 28
-local SPELL_VISIBLE_ROWS = 9
-local ITEM_VISIBLE_ROWS = 9
+local SPELL_VISIBLE_ROWS = 7
+local ITEM_VISIBLE_ROWS = 7
 
 local function MakeText(parent, text, x, y, size, title)
 	local fs = parent:CreateFontString(nil, "OVERLAY")
@@ -842,6 +926,25 @@ local function MakeBinarySlider(parent, leftText, rightText, x, y, width)
 	return slider
 end
 
+
+local function MakeCheckbox(parent, text, x, y)
+	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+	local label
+
+	check:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+	check:SetWidth(24)
+	check:SetHeight(24)
+
+	label = check:CreateFontString(nil, "OVERLAY")
+	label:SetPoint("LEFT", check, "RIGHT", 2, 1)
+	label:SetFont([[Fonts\FRIZQT__.TTF]], 11)
+	label:SetTextColor(0.9, 0.9, 0.9)
+	label:SetText(text)
+	check.label = label
+
+	return check
+end
+
 local function MakeEditBox(parent, x, y, width)
 	local edit = CreateFrame("EditBox", nil, parent)
 
@@ -891,6 +994,73 @@ local function MakeValueSlider(parent, label, x, y, width, low, high, step)
 	return slider
 end
 
+local function SetValueControlEnabled(slider, enabled)
+	slider:EnableMouse(enabled)
+	slider.edit:EnableMouse(enabled)
+
+	if enabled then
+		slider:SetAlpha(1)
+		slider.edit:SetAlpha(1)
+	else
+		slider:SetAlpha(0.45)
+		slider.edit:SetAlpha(0.45)
+		slider.edit:ClearFocus()
+	end
+end
+
+local function MakeStylePreview(parent, styleKey, x, y)
+	local style = STYLE_PRESETS[styleKey]
+	local button = CreateFrame("Button", nil, parent)
+	local preview
+	local previewBorder
+	local label
+
+	button:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+	button:SetWidth(112)
+	button:SetHeight(48)
+	button:SetBackdrop({
+		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
+		edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
+		tile = true, tileSize = 8, edgeSize = 10,
+		insets = { left = 2, right = 2, top = 2, bottom = 2 },
+	})
+	button:SetBackdropColor(0.04, 0.05, 0.07, 0.9)
+	button:SetBackdropBorderColor(0.30, 0.36, 0.43, 1)
+
+	preview = button:CreateTexture(nil, "ARTWORK")
+	preview:SetPoint("TOPLEFT", button, "TOPLEFT", 10, -9)
+	preview:SetWidth(92)
+	preview:SetHeight(12)
+	preview:SetTexture(style.barTexture)
+	preview:SetVertexColor(unpack(style.barColor))
+
+	previewBorder = CreateFrame("Frame", nil, button)
+	previewBorder:SetPoint("TOPLEFT", preview, "TOPLEFT", -style.borderInset, style.borderInset)
+	previewBorder:SetPoint("BOTTOMRIGHT", preview, "BOTTOMRIGHT", style.borderInset, -style.borderInset)
+	previewBorder:SetBackdrop({
+		edgeFile = style.borderTexture,
+		edgeSize = style.borderSize,
+	})
+	previewBorder:SetBackdropBorderColor(unpack(style.borderColor))
+
+	label = button:CreateFontString(nil, "OVERLAY")
+	label:SetPoint("BOTTOM", button, "BOTTOM", 0, 5)
+	label:SetFont([[Fonts\FRIZQT__.TTF]], 10)
+	label:SetTextColor(0.9, 0.9, 0.9)
+	label:SetText(style.name)
+
+	button.styleKey = styleKey
+
+	button:SetScript("OnClick", function()
+		visuals.style = this.styleKey
+		ApplyVisualLayout()
+		RefreshAppearanceOptions()
+	end)
+
+	return button
+end
+
+
 local function ReadInteger(edit, minimum)
 	local value = tonumber(edit:GetText())
 	if not value then
@@ -905,7 +1075,7 @@ local function ReadInteger(edit, minimum)
 	return value
 end
 
-local function RefreshAppearanceOptions()
+RefreshAppearanceOptions = function()
 	if not optionsFrame then return end
 
 	optionsFrame.updating = true
@@ -934,6 +1104,17 @@ local function RefreshAppearanceOptions()
 	optionsFrame.active.edit:SetText(active .. "%")
 	optionsFrame.inactive:SetValue(min(inactive, 100))
 	optionsFrame.inactive.edit:SetText(inactive .. "%")
+
+	if optionsFrame.styleButtons then
+		local styleKey, button
+		for styleKey, button in pairs(optionsFrame.styleButtons) do
+			if visuals.style == styleKey then
+				button:SetBackdropBorderColor(1, 0.82, 0, 1)
+			else
+				button:SetBackdropBorderColor(0.30, 0.36, 0.43, 1)
+			end
+		end
+	end
 
 	optionsFrame.updating = false
 end
@@ -967,6 +1148,47 @@ local function ResolveItemNameAndIcon(typedName)
 	end
 
 	return nil, nil
+end
+
+
+local function RefreshSpellIconOptions()
+	if not optionsFrame or not optionsFrame.spellIconOverrideCheck then return end
+
+	optionsFrame.updating = true
+	optionsFrame.spellIconOverrideCheck:SetChecked(CoolineCharDB.spellIconOverride and 1 or nil)
+
+	local value = CoolineCharDB.spellIconOversize
+	if value == nil then value = visuals.iconoversize end
+
+	optionsFrame.spellOversize:SetValue(min(max(value, -50), 50))
+	if value > 0 then
+		optionsFrame.spellOversize.edit:SetText("+" .. value)
+	else
+		optionsFrame.spellOversize.edit:SetText(tostring(value))
+	end
+
+	SetValueControlEnabled(optionsFrame.spellOversize, CoolineCharDB.spellIconOverride)
+	optionsFrame.updating = false
+end
+
+local function RefreshItemIconOptions()
+	if not optionsFrame or not optionsFrame.itemIconOverrideCheck then return end
+
+	optionsFrame.updating = true
+	optionsFrame.itemIconOverrideCheck:SetChecked(CoolineCharDB.itemIconOverride and 1 or nil)
+
+	local value = CoolineCharDB.itemIconOversize
+	if value == nil then value = visuals.iconoversize end
+
+	optionsFrame.itemOversize:SetValue(min(max(value, -50), 50))
+	if value > 0 then
+		optionsFrame.itemOversize.edit:SetText("+" .. value)
+	else
+		optionsFrame.itemOversize.edit:SetText(tostring(value))
+	end
+
+	SetValueControlEnabled(optionsFrame.itemOversize, CoolineCharDB.itemIconOverride)
+	optionsFrame.updating = false
 end
 
 local function FindSpellRowByName(name)
@@ -1218,9 +1440,11 @@ local function ShowOptionsPage(page)
 
 	if page == "spells" then
 		optionsFrame.spellsPage:Show()
+		RefreshSpellIconOptions()
 		RefreshSpellRows()
 	elseif page == "items" then
 		optionsFrame.itemsPage:Show()
+		RefreshItemIconOptions()
 		RefreshItemRows()
 	else
 		optionsFrame.appearancePage:Show()
@@ -1270,7 +1494,7 @@ local function BuildOptions()
 	tinsert(UISpecialFrames, "CoolineOptionsFrame")
 
 	MakeText(optionsFrame, "Cooline", 18, -16, 14, true)
-	MakeText(optionsFrame, "v1.9.5", 75, -18, 10, false)
+	MakeText(optionsFrame, "v" .. VERSION, 75, -18, 10, false)
 
 	close = MakeButton(optionsFrame, "X", 24)
 	close:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -12, -11)
@@ -1304,24 +1528,34 @@ local function BuildOptions()
 
 	MakeText(page, "Appearance", 18, -18, 14, true)
 
-	MakeText(page, "Settings", 18, -54, 12, true)
-	optionsFrame.scope = MakeBinarySlider(page, "Account Wide", "Per Character", 174, -80, 140)
+	MakeText(page, "Style", 18, -50, 12, true)
+	optionsFrame.styleButtons = {}
+	optionsFrame.styleButtons.classic = MakeStylePreview(page, "classic", 20, -72)
+	optionsFrame.styleButtons.flat = MakeStylePreview(page, "flat", 137, -72)
+	optionsFrame.styleButtons.dark = MakeStylePreview(page, "dark", 254, -72)
+	optionsFrame.styleButtons.borderless = MakeStylePreview(page, "borderless", 371, -72)
 
-	MakeText(page, "Layout", 18, -116, 12, true)
-	MakeText(page, "Bar Direction", 28, -145, 11, false)
-	optionsFrame.direction = MakeBinarySlider(page, "Horizontal", "Vertical", 174, -165, 140)
+	MakeText(page, "Settings", 18, -136, 12, true)
+	optionsFrame.scope = MakeBinarySlider(page, "Account Wide", "Per Character", 174, -158, 140)
 
-	MakeText(page, "Icon Direction", 28, -195, 11, false)
-	optionsFrame.iconDirection = MakeBinarySlider(page, "Ascending", "Descending", 174, -215, 140)
+	MakeText(page, "Layout", 18, -194, 12, true)
+	MakeText(page, "Bar Direction", 28, -224, 11, false)
+	optionsFrame.direction = MakeBinarySlider(page, "Horizontal", "Vertical", 174, -226, 140)
 
-	MakeText(page, "Sizes", 18, -252, 12, true)
-	optionsFrame.length = MakeValueSlider(page, "Bar Length", 28, -280, 350, 100, 1000, 10)
-	optionsFrame.width = MakeValueSlider(page, "Bar Width", 28, -338, 350, 2, 100, 2)
-	optionsFrame.oversize = MakeValueSlider(page, "Icon Oversize", 28, -396, 350, -50, 50, 2)
+	MakeText(page, "Icon Direction", 28, -266, 11, false)
+	optionsFrame.iconDirection = MakeBinarySlider(page, "Ascending", "Descending", 174, -268, 140)
 
-	MakeText(page, "Opacity", 18, -454, 12, true)
-	optionsFrame.active = MakeValueSlider(page, "Bar Active", 28, -482, 350, 0, 100, 10)
-	optionsFrame.inactive = MakeValueSlider(page, "Bar Inactive", 28, -540, 350, 0, 100, 10)
+	-- Lower section uses a shared row grid so Sizes and Opacity line up.
+	MakeText(page, "Sizes", 18, -316, 12, true)
+	MakeText(page, "Opacity", 282, -316, 12, true)
+
+	optionsFrame.length = MakeValueSlider(page, "Bar Length", 28, -346, 170, 100, 1000, 10)
+	optionsFrame.active = MakeValueSlider(page, "Bar Active", 292, -346, 130, 0, 100, 10)
+
+	optionsFrame.width = MakeValueSlider(page, "Bar Width", 28, -414, 170, 2, 100, 2)
+	optionsFrame.inactive = MakeValueSlider(page, "Bar Inactive", 292, -414, 130, 0, 100, 10)
+
+	optionsFrame.oversize = MakeValueSlider(page, "Icon Oversize", 28, -482, 170, -50, 50, 2)
 
 	-- Spells page
 	spells = CreateFrame("Frame", nil, panel)
@@ -1331,21 +1565,30 @@ local function BuildOptions()
 
 	MakeText(spells, "Spells", 18, -18, 14, true)
 
-	MakeText(spells, "Filter Type", 18, -54, 12, true)
-	optionsFrame.filterType = MakeBinarySlider(spells, "Blacklist", "Whitelist", 174, -80, 140)
+	MakeText(spells, "Icon Size", 18, -54, 12, true)
+	optionsFrame.spellIconOverrideCheck = MakeCheckbox(
+		spells,
+		"Spell Only Icon Oversize",
+		28,
+		-78
+	)
+	optionsFrame.spellOversize = MakeValueSlider(spells, "Icon Oversize", 28, -116, 350, -50, 50, 2)
 
-	MakeText(spells, "Add Spell", 18, -120, 12, true)
-	optionsFrame.spellAdd = MakeEditBox(spells, 28, -150, 330)
+	MakeText(spells, "Filter Type", 18, -176, 12, true)
+	optionsFrame.filterType = MakeBinarySlider(spells, "Blacklist", "Whitelist", 174, -202, 140)
+
+	MakeText(spells, "Add Spell", 18, -242, 12, true)
+	optionsFrame.spellAdd = MakeEditBox(spells, 28, -272, 330)
 	optionsFrame.spellAdd:SetJustifyH("LEFT")
 	optionsFrame.spellAdd:SetTextInsets(6, 6, 0, 0)
 
 	addButton = MakeButton(spells, "Add", 70)
-	addButton:SetPoint("TOPLEFT", spells, "TOPLEFT", 372, -149)
+	addButton:SetPoint("TOPLEFT", spells, "TOPLEFT", 372, -271)
 
-	MakeText(spells, "Filtered Spells", 18, -194, 12, true)
+	MakeText(spells, "Filtered Spells", 18, -316, 12, true)
 
 	listFrame = CreateFrame("Frame", nil, spells)
-	listFrame:SetPoint("TOPLEFT", spells, "TOPLEFT", 28, -222)
+	listFrame:SetPoint("TOPLEFT", spells, "TOPLEFT", 28, -344)
 	listFrame:SetWidth(440)
 	listFrame:SetHeight(SPELL_ROW_HEIGHT * SPELL_VISIBLE_ROWS)
 	listFrame:SetBackdrop({
@@ -1472,21 +1715,30 @@ local function BuildOptions()
 
 	MakeText(items, "Items", 18, -18, 14, true)
 
-	MakeText(items, "Filter Type", 18, -54, 12, true)
-	optionsFrame.itemFilterType = MakeBinarySlider(items, "Blacklist", "Whitelist", 174, -80, 140)
+	MakeText(items, "Icon Size", 18, -54, 12, true)
+	optionsFrame.itemIconOverrideCheck = MakeCheckbox(
+		items,
+		"Item Only Icon Oversize",
+		28,
+		-78
+	)
+	optionsFrame.itemOversize = MakeValueSlider(items, "Icon Oversize", 28, -116, 350, -50, 50, 2)
 
-	MakeText(items, "Add Item", 18, -120, 12, true)
-	optionsFrame.itemAdd = MakeEditBox(items, 28, -150, 330)
+	MakeText(items, "Filter Type", 18, -176, 12, true)
+	optionsFrame.itemFilterType = MakeBinarySlider(items, "Blacklist", "Whitelist", 174, -202, 140)
+
+	MakeText(items, "Add Item", 18, -242, 12, true)
+	optionsFrame.itemAdd = MakeEditBox(items, 28, -272, 330)
 	optionsFrame.itemAdd:SetJustifyH("LEFT")
 	optionsFrame.itemAdd:SetTextInsets(6, 6, 0, 0)
 
 	itemAddButton = MakeButton(items, "Add", 70)
-	itemAddButton:SetPoint("TOPLEFT", items, "TOPLEFT", 372, -149)
+	itemAddButton:SetPoint("TOPLEFT", items, "TOPLEFT", 372, -271)
 
-	MakeText(items, "Filtered Items", 18, -194, 12, true)
+	MakeText(items, "Filtered Items", 18, -316, 12, true)
 
 	local itemListFrame = CreateFrame("Frame", nil, items)
-	itemListFrame:SetPoint("TOPLEFT", items, "TOPLEFT", 28, -222)
+	itemListFrame:SetPoint("TOPLEFT", items, "TOPLEFT", 28, -344)
 	itemListFrame:SetWidth(440)
 	itemListFrame:SetHeight(SPELL_ROW_HEIGHT * ITEM_VISIBLE_ROWS)
 	itemListFrame:SetBackdrop({
@@ -1596,6 +1848,103 @@ local function BuildOptions()
 		optionsFrame.itemFilterType:SetValue(CoolineCharDB.itemFilters.mode == "whitelist" and 1 or 0)
 		optionsFrame.updating = false
 		ShowOptionsPage("items")
+	end)
+
+
+	optionsFrame.spellIconOverrideCheck:SetScript("OnClick", function()
+		if optionsFrame.updating then return end
+
+		CoolineCharDB.spellIconOverride = this:GetChecked() and true or false
+
+		if CoolineCharDB.spellIconOverride and CoolineCharDB.spellIconOversize == nil then
+			CoolineCharDB.spellIconOversize = visuals.iconoversize
+		end
+
+		ApplyVisualLayout()
+		RefreshSpellIconOptions()
+	end)
+
+	optionsFrame.spellOversize:SetScript("OnValueChanged", function()
+		if optionsFrame.updating or not CoolineCharDB.spellIconOverride then return end
+
+		local value = floor(this:GetValue() + 0.5)
+		CoolineCharDB.spellIconOversize = value
+
+		if value > 0 then
+			this.edit:SetText("+" .. value)
+		else
+			this.edit:SetText(tostring(value))
+		end
+
+		ApplyVisualLayout()
+	end)
+
+	optionsFrame.spellOversize.edit:SetScript("OnEnterPressed", function()
+		local value = ReadInteger(this, -50)
+		this:ClearFocus()
+
+		if not value then
+			RefreshSpellIconOptions()
+			return
+		end
+
+		CoolineCharDB.spellIconOverride = true
+		CoolineCharDB.spellIconOversize = value
+		ApplyVisualLayout()
+		RefreshSpellIconOptions()
+	end)
+
+	optionsFrame.spellOversize.edit:SetScript("OnEscapePressed", function()
+		this:ClearFocus()
+		RefreshSpellIconOptions()
+	end)
+
+	optionsFrame.itemIconOverrideCheck:SetScript("OnClick", function()
+		if optionsFrame.updating then return end
+
+		CoolineCharDB.itemIconOverride = this:GetChecked() and true or false
+
+		if CoolineCharDB.itemIconOverride and CoolineCharDB.itemIconOversize == nil then
+			CoolineCharDB.itemIconOversize = visuals.iconoversize
+		end
+
+		ApplyVisualLayout()
+		RefreshItemIconOptions()
+	end)
+
+	optionsFrame.itemOversize:SetScript("OnValueChanged", function()
+		if optionsFrame.updating or not CoolineCharDB.itemIconOverride then return end
+
+		local value = floor(this:GetValue() + 0.5)
+		CoolineCharDB.itemIconOversize = value
+
+		if value > 0 then
+			this.edit:SetText("+" .. value)
+		else
+			this.edit:SetText(tostring(value))
+		end
+
+		ApplyVisualLayout()
+	end)
+
+	optionsFrame.itemOversize.edit:SetScript("OnEnterPressed", function()
+		local value = ReadInteger(this, -50)
+		this:ClearFocus()
+
+		if not value then
+			RefreshItemIconOptions()
+			return
+		end
+
+		CoolineCharDB.itemIconOverride = true
+		CoolineCharDB.itemIconOversize = value
+		ApplyVisualLayout()
+		RefreshItemIconOptions()
+	end)
+
+	optionsFrame.itemOversize.edit:SetScript("OnEscapePressed", function()
+		this:ClearFocus()
+		RefreshItemIconOptions()
 	end)
 
 	-- Appearance scripts
