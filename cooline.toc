@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: Cooline
-## Notes: Cooline 1.9.1 nonlinear timeline test
-## Version: 1.9.1
+## Notes: Cooline 1.9.5
+## Version: 1.9.5
 ## SavedVariables: CoolineDB
 ## SavedVariablesPerCharacter: CoolineCharDB
 
