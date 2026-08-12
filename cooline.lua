@@ -1,73 +1,90 @@
--- Cooline 1.9.0
--- Based on shirsig's Cooline for WoW 1.12.1.
---
--- Settings model:
---   CoolineDB     = account-wide visual settings
---   CoolineCharDB = per-character filters and optional visual override
+--[[
+	Cooline 1.9.1
+	Clean single-file rebuild for World of Warcraft 1.12.1.
 
-local COOLINE_VERSION = "1.9.1"
+	Design goals:
+	- Keep the original Cooline timeline concept and appearance.
+	- Do not rely on fragile cached event state.
+	- Reconcile cooldown state periodically so missed events self-repair.
+	- Keep account-wide visuals with an optional per-character visual override.
+	- Keep cooldown filters per character.
+]]
 
-local factory_visuals = {
+local VERSION = "1.9.1"
+
+-- ============================================================================
+-- Defaults and SavedVariables
+-- ============================================================================
+
+local DEFAULT_VISUALS = {
 	vertical = false,
 	reverse = false,
 	width = 360,
 	height = 18,
 	x = 0,
 	y = -240,
+
 	statusbar = [[Interface\TargetingFrame\UI-StatusBar]],
 	bgcolor = { 0, 0, 0, 0.5 },
+
 	border = [[Interface\DialogFrame\UI-DialogBox-Border]],
 	bordersize = 16,
 	borderinset = 4,
 	bordercolor = { 1, 1, 1, 1 },
+
 	iconoutset = 2,
+
 	font = [[Fonts\FRIZQT__.TTF]],
 	fontsize = 10,
 	fontcolor = { 1, 1, 1, 0.8 },
+
 	spellcolor = { 0.8, 0.4, 0, 1 },
-	nospellcolor = { 0, 0, 0, 1 },
+	itemcolor = { 0, 0, 0, 1 },
+
 	inactivealpha = 0.5,
 	activealpha = 1.0,
-	treshold = 3.0,
+
+	overlapThreshold = 3.0,
 }
 
-local function copy_table(source)
+local function CopyTable(source)
 	local result = {}
+	local key, value
+
 	for key, value in pairs(source) do
 		if type(value) == "table" then
-			result[key] = copy_table(value)
+			result[key] = CopyTable(value)
 		else
 			result[key] = value
 		end
 	end
+
 	return result
 end
 
-local function apply_defaults(target, defaults)
+local function ApplyDefaults(target, defaults)
+	local key, value
+
 	for key, value in pairs(defaults) do
 		if target[key] == nil then
 			if type(value) == "table" then
-				target[key] = copy_table(value)
+				target[key] = CopyTable(value)
 			else
 				target[key] = value
 			end
 		elseif type(value) == "table" and type(target[key]) == "table" then
-			apply_defaults(target[key], value)
+			ApplyDefaults(target[key], value)
 		end
 	end
 end
 
--- SavedVariables are not available until VARIABLES_LOADED on Vanilla 1.12.1.
--- These references are initialised there.
-local cooline_theme
+local visuals
 
-local function initialise_settings()
-	-- Account-wide SavedVariables.
+local function InitialiseSavedVariables()
 	CoolineDB = CoolineDB or {}
 	CoolineDB.visuals = CoolineDB.visuals or {}
-	apply_defaults(CoolineDB.visuals, factory_visuals)
+	ApplyDefaults(CoolineDB.visuals, DEFAULT_VISUALS)
 
-	-- Per-character SavedVariables.
 	CoolineCharDB = CoolineCharDB or {}
 
 	if CoolineCharDB.useCharacterVisuals == nil then
@@ -75,6 +92,7 @@ local function initialise_settings()
 	end
 
 	CoolineCharDB.filters = CoolineCharDB.filters or {}
+
 	if CoolineCharDB.filters.mode == nil then
 		CoolineCharDB.filters.mode = "blacklist"
 	end
@@ -85,66 +103,44 @@ local function initialise_settings()
 		CoolineCharDB.filters.whitelist = {}
 	end
 
-	-- A character visual profile is only created when the character actually
-	-- opts into character-specific visuals.
 	if CoolineCharDB.useCharacterVisuals then
 		if not CoolineCharDB.visuals then
-			CoolineCharDB.visuals = copy_table(CoolineDB.visuals)
+			CoolineCharDB.visuals = CopyTable(CoolineDB.visuals)
 		end
-		apply_defaults(CoolineCharDB.visuals, factory_visuals)
-		cooline_theme = CoolineCharDB.visuals
+		ApplyDefaults(CoolineCharDB.visuals, DEFAULT_VISUALS)
+		visuals = CoolineCharDB.visuals
 	else
-		cooline_theme = CoolineDB.visuals
+		visuals = CoolineDB.visuals
 	end
 end
 
-
-local function select_visual_settings()
-	if CoolineCharDB.useCharacterVisuals then
+local function SelectVisualScope(useCharacter)
+	if useCharacter then
 		if not CoolineCharDB.visuals then
-			CoolineCharDB.visuals = copy_table(CoolineDB.visuals)
+			CoolineCharDB.visuals = CopyTable(CoolineDB.visuals)
 		end
-		apply_defaults(CoolineCharDB.visuals, factory_visuals)
-		cooline_theme = CoolineCharDB.visuals
-	else
-		cooline_theme = CoolineDB.visuals
-	end
-end
-
-local function set_character_visuals(enabled)
-	if enabled then
-		if not CoolineCharDB.visuals then
-			CoolineCharDB.visuals = copy_table(CoolineDB.visuals)
-		end
+		ApplyDefaults(CoolineCharDB.visuals, DEFAULT_VISUALS)
 		CoolineCharDB.useCharacterVisuals = true
+		visuals = CoolineCharDB.visuals
 	else
 		CoolineCharDB.useCharacterVisuals = false
+		visuals = CoolineDB.visuals
 	end
-
-	select_visual_settings()
 end
 
-local cooline = CreateFrame('Button', nil, UIParent)
-cooline:SetScript('OnEvent', function()
-	this[event]()
-end)
-cooline:RegisterEvent('VARIABLES_LOADED')
+-- ============================================================================
+-- Filter helpers
+-- ============================================================================
 
-local frame_pool = {}
-local cooldowns = {}
+local function ListContains(list, name)
+	local index, entry
 
-function cooline.hyperlink_name(hyperlink)
-    local _, _, name = strfind(hyperlink, '|Hitem:%d+:%d+:%d+:%d+|h[[]([^]]+)[]]|h')
-    return name
-end
-
-local function list_contains_name(list, name)
-	if not name then
+	if not name or not list then
 		return false
 	end
 
-	for _, listed_name in ipairs(list) do
-		if strupper(name) == strupper(listed_name) then
+	for index, entry in ipairs(list) do
+		if type(entry) == "string" and strupper(entry) == strupper(name) then
 			return true
 		end
 	end
@@ -152,414 +148,615 @@ local function list_contains_name(list, name)
 	return false
 end
 
+local function CooldownAllowed(name)
+	local filters
 
-function cooline.detect_cooldowns()
-	
-	local function start_cooldown(name, texture, start_time, duration, is_spell)
-		local filters = CoolineCharDB.filters
-		local listed
-
-		if filters.mode == "whitelist" then
-			listed = list_contains_name(filters.whitelist, name)
-			if not listed then
-				return
-			end
-		else
-			listed = list_contains_name(filters.blacklist, name)
-			if listed then
-				return
-			end
-		end
-		
-		local end_time = start_time + duration
-			
-		for _, cooldown in pairs(cooldowns) do
-			if cooldown.end_time == end_time then
-				return
-			end
-		end
-
-		cooldowns[name] = cooldowns[name] or tremove(frame_pool) or cooline.cooldown_frame()
-		local frame = cooldowns[name]
-		frame:SetWidth(cooline.icon_size)
-		frame:SetHeight(cooline.icon_size)
-		frame.icon:SetTexture(texture)
-		if is_spell then
-			frame:SetBackdropColor(unpack(cooline_theme.spellcolor))
-		else
-			frame:SetBackdropColor(unpack(cooline_theme.nospellcolor))
-		end
-		frame:SetAlpha((end_time - GetTime() > 360) and 0.6 or 1)
-		frame.end_time = end_time
-		frame:Show()
+	if not name or name == "" then
+		return false
 	end
-	
-    for bag = 0,4 do
-        if GetBagName(bag) then
-            for slot = 1, GetContainerNumSlots(bag) do
-				local start_time, duration, enabled = GetContainerItemCooldown(bag, slot)
-				if enabled == 1 then
-					local name = cooline.hyperlink_name(GetContainerItemLink(bag, slot))
-					if duration > 3 and duration < 3601 then
-						start_cooldown(
-							name,
-							GetContainerItemInfo(bag, slot),
-							start_time,
-							duration,
-							false
-						)
-					elseif duration == 0 then
-						cooline.clear_cooldown(name)
-					end
+
+	filters = CoolineCharDB.filters
+
+	if filters.mode == "whitelist" then
+		return ListContains(filters.whitelist, name)
+	end
+
+	return not ListContains(filters.blacklist, name)
+end
+
+-- ============================================================================
+-- Core state
+-- ============================================================================
+
+local bar = CreateFrame("Button", "CoolineBar", UIParent)
+local active = {}
+local framePool = {}
+local initialised = false
+local optionsFrame
+
+local scanElapsed = 0
+local renderElapsed = 0
+local SCAN_INTERVAL = 0.50
+local RENDER_INTERVAL_IDLE = 0.10
+
+local placeFrame
+local sectionSize = 60
+local iconSize = 20
+
+-- ============================================================================
+-- Timeline layout
+-- ============================================================================
+
+local function PlaceHorizontal(frame, offset, justify)
+	frame:ClearAllPoints()
+	frame:SetPoint(justify or "CENTER", bar, "LEFT", offset, 0)
+end
+
+local function PlaceHorizontalReverse(frame, offset, justify)
+	frame:ClearAllPoints()
+	frame:SetPoint(justify or "CENTER", bar, "LEFT", visuals.width - offset, 0)
+end
+
+local function PlaceVertical(frame, offset, justify)
+	frame:ClearAllPoints()
+	frame:SetPoint(justify or "CENTER", bar, "BOTTOM", 0, offset)
+end
+
+local function PlaceVerticalReverse(frame, offset, justify)
+	frame:ClearAllPoints()
+	frame:SetPoint(justify or "CENTER", bar, "BOTTOM", 0, visuals.height - offset)
+end
+
+local function TimelineOffset(timeLeft)
+	if timeLeft <= 0 then
+		return 0
+	elseif timeLeft < 1 then
+		return sectionSize * timeLeft
+	elseif timeLeft < 3 then
+		return sectionSize * (1 + ((timeLeft - 1) / 2))
+	elseif timeLeft < 10 then
+		return sectionSize * (2 + ((timeLeft - 3) / 7))
+	elseif timeLeft < 30 then
+		return sectionSize * (3 + ((timeLeft - 10) / 20))
+	elseif timeLeft < 120 then
+		return sectionSize * (4 + ((timeLeft - 30) / 90))
+	elseif timeLeft < 360 then
+		return sectionSize * (5 + ((timeLeft - 120) / 240))
+	end
+
+	return sectionSize * 6
+end
+
+local function LayoutLabel(label, offset, edge)
+	local justify = edge
+
+	label:SetFont(visuals.font, visuals.fontsize)
+	label:SetTextColor(unpack(visuals.fontcolor))
+	label:SetWidth(visuals.fontsize * 3)
+	label:SetHeight(visuals.fontsize + 2)
+	label:SetShadowColor(unpack(visuals.bgcolor))
+	label:SetShadowOffset(1, -1)
+	label:SetJustifyH("CENTER")
+
+	if edge then
+		if visuals.vertical then
+			if visuals.reverse then
+				if edge == "LEFT" then
+					justify = "TOP"
+				else
+					justify = "BOTTOM"
 				end
-            end
-        end
-    end
-	
-	for slot=0,19 do
-		local start_time, duration, enabled = GetInventoryItemCooldown('player', slot)
-		if enabled == 1 then
-			local name = cooline.hyperlink_name(GetInventoryItemLink('player', slot))
-			if duration > 3 and duration < 3601 then
-				start_cooldown(
-					name,
-					GetInventoryItemTexture('player', slot),
-					start_time,
-					duration,
-					false
-				)
-			elseif duration == 0 then
-				cooline.clear_cooldown(name)
-			end
-		end
-	end
-	
-	local _, _, offset, spell_count = GetSpellTabInfo(GetNumSpellTabs())
-	local total_spells = offset + spell_count
-	for id=1,total_spells do
-		local start_time, duration, enabled = GetSpellCooldown(id, BOOKTYPE_SPELL)
-		local name = GetSpellName(id, BOOKTYPE_SPELL)
-		if enabled == 1 and duration > 2.5 then
-			start_cooldown(
-				name,
-				GetSpellTexture(id, BOOKTYPE_SPELL),
-				start_time,
-				duration,
-				true
-			)
-		elseif duration == 0 then
-			cooline.clear_cooldown(name)
-		end
-	end
-	
-	cooline.on_update(true)
-end
-
-function cooline.cooldown_frame()
-	local frame = CreateFrame('Frame', nil, cooline.border)
-	frame:SetBackdrop({ bgFile=[[Interface\AddOns\cooline\artwork\backdrop.tga]] })
-	frame.icon = frame:CreateTexture(nil, 'ARTWORK')
-	frame.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-	frame.icon:SetPoint('TOPLEFT', 1, -1)
-	frame.icon:SetPoint('BOTTOMRIGHT', -1, 1)
-	return frame
-end
-
-local function place_H(this, offset, just)
-	this:SetPoint(just or 'CENTER', cooline, 'LEFT', offset, 0)
-end
-local function place_HR(this, offset, just)
-	this:SetPoint(just or 'CENTER', cooline, 'LEFT', cooline_theme.width - offset, 0)
-end
-local function place_V(this, offset, just)
-	this:SetPoint(just or 'CENTER', cooline, 'BOTTOM', 0, offset)
-end
-local function place_VR(this, offset, just)
-	this:SetPoint(just or 'CENTER', cooline, 'BOTTOM', 0, cooline_theme.height - offset)
-end
-
-function cooline.clear_cooldown(name)
-	if cooldowns[name] then
-		cooldowns[name]:Hide()
-		tinsert(frame_pool, cooldowns[name])
-		cooldowns[name] = nil
-	end
-end
-
-local relevel, throt = false, 0
-
-function getKeysSortedByValue(tbl, sortFunction)
-	local keys = {}
-	for key in pairs(tbl) do
-		table.insert(keys, key)
-	end
-
-	table.sort(keys, function(a, b)
-		return sortFunction(tbl[a], tbl[b])
-	end)
-
-	return keys
-end
-
-function cooline.update_cooldown(name, frame, position, tthrot, relevel)
-	throt = min(throt, tthrot)
-	
-	if frame.end_time - GetTime() < cooline_theme.treshold then
-		local sorted = getKeysSortedByValue(cooldowns, function(a, b) return a.end_time > b.end_time end)
-		for i, k in ipairs(sorted) do
-			if name == k then
-				frame:SetFrameLevel(i+2)
-			end
-		end
-	else
-		if relevel then
-			frame:SetFrameLevel(random(1,5) + 2)
-		end
-	end
-	
-	cooline.place(frame, position)
-end
-
-do
-	local last_update, last_relevel = GetTime(), GetTime()
-	
-	function cooline.on_update(force)
-		if GetTime() - last_update < throt and not force then return end
-		last_update = GetTime()
-		
-		relevel = false
-		if GetTime() - last_relevel > 0.4 then
-			relevel, last_relevel = true, GetTime()
-		end
-		
-		isactive, throt = false, 1.5
-		for name, frame in pairs(cooldowns) do
-			local time_left = frame.end_time - GetTime()
-			isactive = isactive or time_left < 360
-			
-			if time_left < -1 then
-				throt = min(throt, 0.2)
-				isactive = true
-				cooline.clear_cooldown(name)
-			elseif time_left < 0 then
-				cooline.update_cooldown(name, frame, 0, 0, relevel)
-				frame:SetAlpha(1 + time_left)  -- fades
-			elseif time_left < 0.3 then
-				local size = cooline.icon_size * (0.5 - time_left) * 5  -- icon_size + icon_size * (0.3 - time_left) / 0.2
-				frame:SetWidth(size)
-				frame:SetHeight(size)
-				cooline.update_cooldown(name, frame, cooline.section * time_left, 0, relevel)
-			elseif time_left < 1 then
-				cooline.update_cooldown(name, frame, cooline.section * time_left, 0, relevel)
-			elseif time_left < 3 then
-				cooline.update_cooldown(name, frame, cooline.section * (time_left + 1) * 0.5, 0.02, relevel)  -- 1 + (time_left - 1) / 2
-			elseif time_left < 10 then
-				cooline.update_cooldown(name, frame, cooline.section * (time_left + 11) * 0.14286, time_left > 4 and 0.05 or 0.02, relevel)  -- 2 + (time_left - 3) / 7
-			elseif time_left < 30 then
-				cooline.update_cooldown(name, frame, cooline.section * (time_left + 50) * 0.05, 0.06, relevel)  -- 3 + (time_left - 10) / 20
-			elseif time_left < 120 then
-				cooline.update_cooldown(name, frame, cooline.section * (time_left + 330) * 0.011111, 0.18, relevel)  -- 4 + (time_left - 30) / 90
-			elseif time_left < 360 then
-				cooline.update_cooldown(name, frame, cooline.section * (time_left + 1080) * 0.0041667, 1.2, relevel)  -- 5 + (time_left - 120) / 240
-				frame:SetAlpha(cooline_theme.activealpha)
 			else
-				cooline.update_cooldown(name, frame, 6 * cooline.section, 2, relevel)
+				if edge == "LEFT" then
+					justify = "BOTTOM"
+				else
+					justify = "TOP"
+				end
 			end
-		end
-		cooline:SetAlpha(isactive and cooline_theme.activealpha or cooline_theme.inactivealpha)
-	end
-end
-
-local create_options
-
-function cooline.layout_label(fs, offset, just)
-	fs:SetFont(cooline_theme.font, cooline_theme.fontsize)
-	fs:SetTextColor(unpack(cooline_theme.fontcolor))
-	fs:SetWidth(cooline_theme.fontsize * 3)
-	fs:SetHeight(cooline_theme.fontsize + 2)
-	fs:SetShadowColor(unpack(cooline_theme.bgcolor))
-	fs:SetShadowOffset(1, -1)
-	fs:ClearAllPoints()
-
-	if just then
-		if cooline_theme.vertical then
-			fs:SetJustifyH('CENTER')
-			just = cooline_theme.reverse and ((just == 'LEFT' and 'TOP') or 'BOTTOM') or ((just == 'LEFT' and 'BOTTOM') or 'TOP')
-		elseif cooline_theme.reverse then
-			just = (just == 'LEFT' and 'RIGHT') or 'LEFT'
-			offset = offset + ((just == 'LEFT' and 1) or -1)
-			fs:SetJustifyH(just)
 		else
-			offset = offset + ((just == 'LEFT' and 1) or -1)
-			fs:SetJustifyH(just)
+			if visuals.reverse then
+				if edge == "LEFT" then
+					justify = "RIGHT"
+				else
+					justify = "LEFT"
+				end
+			else
+				justify = edge
+			end
+
+			if justify == "LEFT" then
+				offset = offset + 1
+			else
+				offset = offset - 1
+			end
+
+			label:SetJustifyH(justify)
 		end
-	else
-		fs:SetJustifyH('CENTER')
 	end
 
-	cooline.place(fs, offset, just)
+	placeFrame(label, offset, justify)
 end
 
-function cooline.label(text, offset, just)
-	local fs = cooline.overlay:CreateFontString(nil, 'OVERLAY')
-	fs:SetText(text)
-	cooline.layout_label(fs, offset, just)
-	return fs
-end
+local function ApplyVisualLayout()
+	local frame
 
-function cooline.apply_visual_settings()
-	if not cooline_theme or not cooline.bg or not cooline.border then
+	if not initialised then
 		return
 	end
 
-	cooline:SetWidth(cooline_theme.width)
-	cooline:SetHeight(cooline_theme.height)
+	bar:SetWidth(visuals.width)
+	bar:SetHeight(visuals.height)
+	bar:ClearAllPoints()
+	bar:SetPoint("CENTER", UIParent, "CENTER", visuals.x, visuals.y)
 
-	cooline:ClearAllPoints()
-	cooline:SetPoint('CENTER', cooline_theme.x, cooline_theme.y)
-
-	if cooline_theme.vertical then
-		cooline.bg:SetTexCoord(1, 0, 0, 0, 1, 1, 0, 1)
+	if visuals.vertical then
+		placeFrame = visuals.reverse and PlaceVerticalReverse or PlaceVertical
+		sectionSize = visuals.height / 6
+		iconSize = visuals.width + (visuals.iconoutset * 2)
+		bar.bg:SetTexCoord(1, 0, 0, 0, 1, 1, 0, 1)
 	else
-		cooline.bg:SetTexCoord(0, 1, 0, 1)
+		placeFrame = visuals.reverse and PlaceHorizontalReverse or PlaceHorizontal
+		sectionSize = visuals.width / 6
+		iconSize = visuals.height + (visuals.iconoutset * 2)
+		bar.bg:SetTexCoord(0, 1, 0, 1)
 	end
 
-	cooline.section = (cooline_theme.vertical and cooline_theme.height or cooline_theme.width) / 6
-	cooline.icon_size = (cooline_theme.vertical and cooline_theme.width or cooline_theme.height) + cooline_theme.iconoutset * 2
-	cooline.place = cooline_theme.vertical and (cooline_theme.reverse and place_VR or place_V) or (cooline_theme.reverse and place_HR or place_H)
+	LayoutLabel(bar.tick0, 0, "LEFT")
+	LayoutLabel(bar.tick1, sectionSize)
+	LayoutLabel(bar.tick3, sectionSize * 2)
+	LayoutLabel(bar.tick10, sectionSize * 3)
+	LayoutLabel(bar.tick30, sectionSize * 4)
+	LayoutLabel(bar.tick120, sectionSize * 5)
+	LayoutLabel(bar.tick360, sectionSize * 6, "RIGHT")
 
-	if cooline.tick0 then
-		cooline.layout_label(cooline.tick0, 0, 'LEFT')
-		cooline.layout_label(cooline.tick1, cooline.section)
-		cooline.layout_label(cooline.tick3, cooline.section * 2)
-		cooline.layout_label(cooline.tick10, cooline.section * 3)
-		cooline.layout_label(cooline.tick30, cooline.section * 4)
-		cooline.layout_label(cooline.tick120, cooline.section * 5)
-		cooline.layout_label(cooline.tick300, cooline.section * 6, 'RIGHT')
+	for _, frame in pairs(active) do
+		frame:SetWidth(iconSize)
+		frame:SetHeight(iconSize)
 	end
 
-	for _, frame in pairs(cooldowns) do
-		frame:SetWidth(cooline.icon_size)
-		frame:SetHeight(cooline.icon_size)
+	for _, frame in ipairs(framePool) do
+		frame:SetWidth(iconSize)
+		frame:SetHeight(iconSize)
 	end
-
-	cooline.on_update(true)
 end
 
-function cooline.VARIABLES_LOADED()
-	initialise_settings()
+-- ============================================================================
+-- Cooldown frames
+-- ============================================================================
 
-	cooline:SetClampedToScreen(true)
-	cooline:SetMovable(true)
-	cooline:RegisterForDrag('LeftButton')
-	
-	function cooline:on_drag_stop()
-		this:StopMovingOrSizing()
-		local x, y = this:GetCenter()
-		local ux, uy = UIParent:GetCenter()
-		cooline_theme.x, cooline_theme.y = floor(x - ux + 0.5), floor(y - uy + 0.5)
-		this.dragging = false
-	end
-	cooline:SetScript('OnDragStart', function()
-		this.dragging = true
-		this:StartMoving()
-	end)
-	cooline:SetScript('OnDragStop', function()
-		this:on_drag_stop()
-	end)
-	cooline:SetScript('OnUpdate', function()
-		this:EnableMouse(IsAltKeyDown())
-		if not IsAltKeyDown() and this.dragging then
-			this:on_drag_stop()
-		end
-		cooline.on_update()
-	end)
+local function CreateCooldownFrame()
+	local frame = CreateFrame("Frame", nil, bar.border)
 
-	cooline:SetWidth(cooline_theme.width)
-	cooline:SetHeight(cooline_theme.height)
-	cooline:SetPoint('CENTER', cooline_theme.x, cooline_theme.y)
-	
-	cooline.bg = cooline:CreateTexture(nil, 'ARTWORK')
-	cooline.bg:SetTexture(cooline_theme.statusbar)
-	cooline.bg:SetVertexColor(unpack(cooline_theme.bgcolor))
-	cooline.bg:SetAllPoints(cooline)
-	if cooline_theme.vertical then
-		cooline.bg:SetTexCoord(1, 0, 0, 0, 1, 1, 0, 1)
-	else
-		cooline.bg:SetTexCoord(0, 1, 0, 1)
-	end
-
-	cooline.border = CreateFrame('Frame', nil, cooline)
-	cooline.border:SetPoint('TOPLEFT', -cooline_theme.borderinset, cooline_theme.borderinset)
-	cooline.border:SetPoint('BOTTOMRIGHT', cooline_theme.borderinset, -cooline_theme.borderinset)
-	cooline.border:SetBackdrop({
-		edgeFile = cooline_theme.border,
-		edgeSize = cooline_theme.bordersize,
+	frame:SetBackdrop({
+		bgFile = [[Interface\AddOns\Cooline\artwork\backdrop.tga]]
 	})
-	cooline.border:SetBackdropBorderColor(unpack(cooline_theme.bordercolor))
 
-	cooline.overlay = CreateFrame('Frame', nil, cooline.border)
-	cooline.overlay:SetFrameLevel(24) -- TODO this gets changed automatically later, to 9, find out why
+	frame.icon = frame:CreateTexture(nil, "ARTWORK")
+	frame.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+	frame.icon:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+	frame.icon:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
 
-	cooline.section = (cooline_theme.vertical and cooline_theme.height or cooline_theme.width) / 6
-	cooline.icon_size = (cooline_theme.vertical and cooline_theme.width or cooline_theme.height) + cooline_theme.iconoutset * 2
-	cooline.place = cooline_theme.vertical and (cooline_theme.reverse and place_VR or place_V) or (cooline_theme.reverse and place_HR or place_H)
-
-	cooline.tick0 = cooline.label('0', 0, 'LEFT')
-	cooline.tick1 = cooline.label('1', cooline.section)
-	cooline.tick3 = cooline.label('3', cooline.section * 2)
-	cooline.tick10 = cooline.label('10', cooline.section * 3)
-	cooline.tick30 = cooline.label('30', cooline.section * 4)
-	cooline.tick120 = cooline.label('2m', cooline.section * 5)
-	cooline.tick300 = cooline.label('6m', cooline.section * 6, 'RIGHT')
-	
-	cooline:RegisterEvent('SPELL_UPDATE_COOLDOWN')
-	cooline:RegisterEvent('BAG_UPDATE_COOLDOWN')
-	
-	cooline.detect_cooldowns()
-
-	create_options()
-
-	DEFAULT_CHAT_FRAME:AddMessage('|c00ffff00Cooline ' .. COOLINE_VERSION .. ' loaded: move the Cooline bar by holding <alt> while dragging it with left mouse button.|r');
+	frame:Hide()
+	return frame
 end
 
+local function AcquireFrame()
+	local count = table.getn(framePool)
+	local frame
 
-local options
+	if count > 0 then
+		frame = framePool[count]
+		framePool[count] = nil
+	else
+		frame = CreateCooldownFrame()
+	end
 
-local function options_label(parent, text, x, y, size)
-	local fs = parent:CreateFontString(nil, 'OVERLAY')
-	fs:SetPoint('TOPLEFT', parent, 'TOPLEFT', x, y)
-	fs:SetFont([[Fonts\FRIZQT__.TTF]], size or 12)
-	fs:SetTextColor(1, 0.82, 0)
-	fs:SetText(text)
-	return fs
+	frame:SetWidth(iconSize)
+	frame:SetHeight(iconSize)
+	frame:SetAlpha(1)
+	return frame
 end
 
-local function options_body_text(parent, text, x, y)
-	local fs = parent:CreateFontString(nil, 'OVERLAY')
-	fs:SetPoint('TOPLEFT', parent, 'TOPLEFT', x, y)
-	fs:SetFont([[Fonts\FRIZQT__.TTF]], 11)
-	fs:SetTextColor(0.9, 0.9, 0.9)
-	fs:SetText(text)
-	return fs
+local function ReleaseCooldown(key)
+	local cooldown = active[key]
+
+	if not cooldown then
+		return
+	end
+
+	cooldown.frame:Hide()
+	cooldown.frame.key = nil
+	cooldown.frame.endTime = nil
+	tinsert(framePool, cooldown.frame)
+	active[key] = nil
 end
 
-local function make_button(parent, text, width, height)
-	local button = CreateFrame('Button', nil, parent, 'UIPanelButtonTemplate')
+local function StartOrUpdateCooldown(key, name, texture, startTime, duration, kind)
+	local cooldown
+	local endTime
+
+	if not CooldownAllowed(name) then
+		ReleaseCooldown(key)
+		return
+	end
+
+	if not startTime or not duration or duration <= 0 then
+		ReleaseCooldown(key)
+		return
+	end
+
+	endTime = startTime + duration
+	cooldown = active[key]
+
+	if not cooldown then
+		cooldown = {
+			key = key,
+			name = name,
+			kind = kind,
+			frame = AcquireFrame(),
+		}
+		active[key] = cooldown
+	end
+
+	cooldown.name = name
+	cooldown.kind = kind
+	cooldown.startTime = startTime
+	cooldown.duration = duration
+	cooldown.endTime = endTime
+	cooldown.seen = true
+
+	cooldown.frame.key = key
+	cooldown.frame.endTime = endTime
+	cooldown.frame.icon:SetTexture(texture)
+
+	if kind == "spell" then
+		cooldown.frame:SetBackdropColor(unpack(visuals.spellcolor))
+	else
+		cooldown.frame:SetBackdropColor(unpack(visuals.itemcolor))
+	end
+
+	cooldown.frame:Show()
+end
+
+-- ============================================================================
+-- Cooldown scanning
+-- ============================================================================
+
+local function SafeItemName(link)
+	local _, _, name
+
+	if not link or type(link) ~= "string" then
+		return nil
+	end
+
+	_, _, name = strfind(link, "|h%[([^]]+)%]|h")
+	return name
+end
+
+local function MarkAllUnseen()
+	local _, cooldown
+
+	for _, cooldown in pairs(active) do
+		cooldown.seen = false
+	end
+end
+
+local function ScanBags()
+	local bag, slot
+	local slots
+	local startTime, duration, enabled
+	local link, name, texture
+
+	for bag = 0, 4 do
+		slots = GetContainerNumSlots(bag) or 0
+
+		for slot = 1, slots do
+			startTime, duration, enabled = GetContainerItemCooldown(bag, slot)
+
+			if enabled == 1 and duration and duration > 3 and duration < 3601 then
+				link = GetContainerItemLink(bag, slot)
+				name = SafeItemName(link)
+
+				if name then
+					texture = GetContainerItemInfo(bag, slot)
+					StartOrUpdateCooldown(
+						"bag:" .. name,
+						name,
+						texture,
+						startTime,
+						duration,
+						"item"
+					)
+				end
+			end
+		end
+	end
+end
+
+local function ScanEquipment()
+	local slot
+	local startTime, duration, enabled
+	local link, name, texture
+
+	for slot = 0, 19 do
+		startTime, duration, enabled = GetInventoryItemCooldown("player", slot)
+
+		if enabled == 1 and duration and duration > 3 and duration < 3601 then
+			link = GetInventoryItemLink("player", slot)
+			name = SafeItemName(link)
+
+			if name then
+				texture = GetInventoryItemTexture("player", slot)
+				StartOrUpdateCooldown(
+					"equipped:" .. name,
+					name,
+					texture,
+					startTime,
+					duration,
+					"item"
+				)
+			end
+		end
+	end
+end
+
+local function GetSpellbookCount()
+	local tabs = GetNumSpellTabs() or 0
+	local tab
+	local _, _, offset, count
+	local highest = 0
+	local total
+
+	for tab = 1, tabs do
+		_, _, offset, count = GetSpellTabInfo(tab)
+
+		if offset and count then
+			total = offset + count
+			if total > highest then
+				highest = total
+			end
+		end
+	end
+
+	return highest
+end
+
+local function ScanSpells()
+	local spellCount = GetSpellbookCount()
+	local id
+	local name, rank, texture
+	local startTime, duration, enabled
+	local key
+
+	for id = 1, spellCount do
+		name, rank = GetSpellName(id, BOOKTYPE_SPELL)
+
+		if name then
+			startTime, duration, enabled = GetSpellCooldown(id, BOOKTYPE_SPELL)
+
+			-- >2.5s deliberately excludes the normal global cooldown.
+			if enabled == 1 and duration and duration > 2.5 then
+				texture = GetSpellTexture(id, BOOKTYPE_SPELL)
+
+				-- All ranks of the same spell share one Cooline entry. Vanilla
+				-- can report the same cooldown on multiple learned ranks.
+				key = "spell:" .. name
+
+				StartOrUpdateCooldown(
+					key,
+					name,
+					texture,
+					startTime,
+					duration,
+					"spell"
+				)
+			end
+		end
+	end
+end
+
+local function ReconcileCooldowns()
+	local key, cooldown
+	local now = GetTime()
+
+	if not initialised then
+		return
+	end
+
+	MarkAllUnseen()
+
+	ScanSpells()
+	ScanBags()
+	ScanEquipment()
+
+	-- Anything that was active on the previous scan but cannot be found now
+	-- has ended, disappeared, or changed. Remove it cleanly.
+	for key, cooldown in pairs(active) do
+		if not cooldown.seen or cooldown.endTime <= now - 0.25 then
+			ReleaseCooldown(key)
+		end
+	end
+end
+
+-- ============================================================================
+-- Rendering
+-- ============================================================================
+
+local function SortByEndTime(a, b)
+	return a.endTime < b.endTime
+end
+
+local function RenderCooldowns()
+	local now = GetTime()
+	local list = {}
+	local _, cooldown
+	local index
+	local timeLeft
+	local offset
+	local size
+	local anyActive = false
+
+	for _, cooldown in pairs(active) do
+		tinsert(list, cooldown)
+	end
+
+	table.sort(list, SortByEndTime)
+
+	for index, cooldown in ipairs(list) do
+		timeLeft = cooldown.endTime - now
+
+		if timeLeft <= -0.25 then
+			ReleaseCooldown(cooldown.key)
+		else
+			anyActive = true
+			offset = TimelineOffset(timeLeft)
+
+			if timeLeft < 0 then
+				cooldown.frame:SetAlpha(max(0, 1 + (timeLeft * 4)))
+			else
+				cooldown.frame:SetAlpha(1)
+			end
+
+			if timeLeft >= 0 and timeLeft < 0.3 then
+				size = iconSize * (0.5 - timeLeft) * 5
+				if size < iconSize then
+					size = iconSize
+				end
+				cooldown.frame:SetWidth(size)
+				cooldown.frame:SetHeight(size)
+			else
+				cooldown.frame:SetWidth(iconSize)
+				cooldown.frame:SetHeight(iconSize)
+			end
+
+			-- Deterministic frame levels replace the original random re-leveling.
+			cooldown.frame:SetFrameLevel(index + 2)
+			placeFrame(cooldown.frame, offset)
+		end
+	end
+
+	bar:SetAlpha(anyActive and visuals.activealpha or visuals.inactivealpha)
+end
+
+-- ============================================================================
+-- Bar construction and movement
+-- ============================================================================
+
+local function CreateLabel(text)
+	local label = bar.overlay:CreateFontString(nil, "OVERLAY")
+	label:SetText(text)
+	return label
+end
+
+local function StopDragging()
+	local x, y
+	local ux, uy
+
+	bar:StopMovingOrSizing()
+
+	x, y = bar:GetCenter()
+	ux, uy = UIParent:GetCenter()
+
+	if x and y and ux and uy then
+		visuals.x = floor(x - ux + 0.5)
+		visuals.y = floor(y - uy + 0.5)
+	end
+
+	bar.dragging = false
+end
+
+local function BuildBar()
+	bar:SetClampedToScreen(true)
+	bar:SetMovable(true)
+	bar:RegisterForDrag("LeftButton")
+
+	bar.bg = bar:CreateTexture(nil, "ARTWORK")
+	bar.bg:SetTexture(visuals.statusbar)
+	bar.bg:SetVertexColor(unpack(visuals.bgcolor))
+	bar.bg:SetAllPoints(bar)
+
+	bar.border = CreateFrame("Frame", nil, bar)
+	bar.border:SetPoint("TOPLEFT", bar, "TOPLEFT", -visuals.borderinset, visuals.borderinset)
+	bar.border:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", visuals.borderinset, -visuals.borderinset)
+	bar.border:SetBackdrop({
+		edgeFile = visuals.border,
+		edgeSize = visuals.bordersize,
+	})
+	bar.border:SetBackdropBorderColor(unpack(visuals.bordercolor))
+
+	bar.overlay = CreateFrame("Frame", nil, bar.border)
+	bar.overlay:SetAllPoints(bar.border)
+	bar.overlay:SetFrameLevel(24)
+
+	-- Select a placement function before labels are positioned.
+	if visuals.vertical then
+		placeFrame = visuals.reverse and PlaceVerticalReverse or PlaceVertical
+	else
+		placeFrame = visuals.reverse and PlaceHorizontalReverse or PlaceHorizontal
+	end
+
+	bar.tick0 = CreateLabel("0")
+	bar.tick1 = CreateLabel("1")
+	bar.tick3 = CreateLabel("3")
+	bar.tick10 = CreateLabel("10")
+	bar.tick30 = CreateLabel("30")
+	bar.tick120 = CreateLabel("2m")
+	bar.tick360 = CreateLabel("6m")
+
+	initialised = true
+	ApplyVisualLayout()
+
+	bar:SetScript("OnDragStart", function()
+		if IsAltKeyDown() then
+			this.dragging = true
+			this:StartMoving()
+		end
+	end)
+
+	bar:SetScript("OnDragStop", function()
+		StopDragging()
+	end)
+end
+
+-- ============================================================================
+-- Options UI
+-- ============================================================================
+
+local function MakeButton(parent, text, width)
+	local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
 	button:SetWidth(width)
-	button:SetHeight(height)
+	button:SetHeight(22)
 	button:SetText(text)
 	return button
 end
 
-local function make_checkbox(parent, text, x, y)
-	local check = CreateFrame('CheckButton', nil, parent, 'UICheckButtonTemplate')
-	check:SetPoint('TOPLEFT', parent, 'TOPLEFT', x, y)
+local function MakeText(parent, text, x, y, size, colour)
+	local fontString = parent:CreateFontString(nil, "OVERLAY")
+	fontString:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+	fontString:SetFont([[Fonts\FRIZQT__.TTF]], size or 11)
+
+	if colour == "title" then
+		fontString:SetTextColor(1, 0.82, 0)
+	elseif colour == "muted" then
+		fontString:SetTextColor(0.65, 0.70, 0.76)
+	else
+		fontString:SetTextColor(0.9, 0.9, 0.9)
+	end
+
+	fontString:SetText(text or "")
+	return fontString
+end
+
+local function MakeCheckbox(parent, text, x, y)
+	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+	local label
+
+	check:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
 	check:SetWidth(24)
 	check:SetHeight(24)
 
-	local label = check:CreateFontString(nil, 'OVERLAY')
-	label:SetPoint('LEFT', check, 'RIGHT', 2, 1)
+	label = check:CreateFontString(nil, "OVERLAY")
+	label:SetPoint("LEFT", check, "RIGHT", 2, 1)
 	label:SetFont([[Fonts\FRIZQT__.TTF]], 11)
 	label:SetTextColor(0.9, 0.9, 0.9)
 	label:SetText(text)
@@ -568,46 +765,90 @@ local function make_checkbox(parent, text, x, y)
 	return check
 end
 
-local slider_count = 0
-local function make_slider(parent, label, x, y, width, low, high, step)
-	slider_count = slider_count + 1
-	local name = 'CoolineOptionsSlider' .. slider_count
-	local slider = CreateFrame('Slider', name, parent, 'OptionsSliderTemplate')
-	slider:SetPoint('TOPLEFT', parent, 'TOPLEFT', x, y)
+local sliderNumber = 0
+
+local function MakeSlider(parent, text, x, y, width, low, high, step)
+	local slider
+	local name
+
+	sliderNumber = sliderNumber + 1
+	name = "CoolineSlider" .. sliderNumber
+
+	slider = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
+	slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
 	slider:SetWidth(width)
 	slider:SetHeight(16)
 	slider:SetMinMaxValues(low, high)
 	slider:SetValueStep(step)
 
-	getglobal(name .. 'Text'):SetText(label)
-	getglobal(name .. 'Low'):SetText(tostring(low))
-	getglobal(name .. 'High'):SetText(tostring(high))
+	getglobal(name .. "Text"):SetText(text)
+	getglobal(name .. "Low"):SetText(tostring(low))
+	getglobal(name .. "High"):SetText(tostring(high))
 
-	local value = parent:CreateFontString(nil, 'OVERLAY')
-	value:SetPoint('LEFT', slider, 'RIGHT', 10, 0)
-	value:SetFont([[Fonts\FRIZQT__.TTF]], 11)
-	value:SetTextColor(0.9, 0.9, 0.9)
-	slider.valueText = value
+	slider.valueText = parent:CreateFontString(nil, "OVERLAY")
+	slider.valueText:SetPoint("LEFT", slider, "RIGHT", 10, 0)
+	slider.valueText:SetFont([[Fonts\FRIZQT__.TTF]], 11)
+	slider.valueText:SetTextColor(0.9, 0.9, 0.9)
 
 	return slider
 end
 
-create_options = function()
-	if options then
+local function RefreshOptions()
+	if not optionsFrame then
 		return
 	end
 
-	options = CreateFrame('Frame', 'CoolineOptionsFrame', UIParent)
-	options:SetWidth(520)
-	options:SetHeight(400)
-	options:SetPoint('CENTER', UIParent, 'CENTER', 0, 40)
-	options:SetFrameStrata('DIALOG')
-	options:SetMovable(true)
-	options:EnableMouse(true)
-	options:RegisterForDrag('LeftButton')
-	options:SetScript('OnDragStart', function() this:StartMoving() end)
-	options:SetScript('OnDragStop', function() this:StopMovingOrSizing() end)
-	options:SetBackdrop({
+	optionsFrame.updating = true
+
+	optionsFrame.characterVisuals:SetChecked(CoolineCharDB.useCharacterVisuals and 1 or nil)
+
+	if CoolineCharDB.useCharacterVisuals then
+		optionsFrame.scope:SetText("Editing: this character")
+	else
+		optionsFrame.scope:SetText("Editing: account-wide")
+	end
+
+	optionsFrame.width:SetValue(visuals.width)
+	optionsFrame.width.valueText:SetText(tostring(visuals.width))
+
+	optionsFrame.height:SetValue(visuals.height)
+	optionsFrame.height.valueText:SetText(tostring(visuals.height))
+
+	optionsFrame.vertical:SetChecked(visuals.vertical and 1 or nil)
+	optionsFrame.reverse:SetChecked(visuals.reverse and 1 or nil)
+
+	optionsFrame.activeAlpha:SetValue(floor((visuals.activealpha * 100) + 0.5))
+	optionsFrame.activeAlpha.valueText:SetText(floor((visuals.activealpha * 100) + 0.5) .. "%")
+
+	optionsFrame.inactiveAlpha:SetValue(floor((visuals.inactivealpha * 100) + 0.5))
+	optionsFrame.inactiveAlpha.valueText:SetText(floor((visuals.inactivealpha * 100) + 0.5) .. "%")
+
+	optionsFrame.updating = false
+end
+
+local function BuildOptions()
+	local close
+	local appearanceTab, cooldownsTab, advancedTab
+	local panel
+	local page
+	local placeholder
+	local reset
+
+	if optionsFrame then
+		return
+	end
+
+	optionsFrame = CreateFrame("Frame", "CoolineOptionsFrame", UIParent)
+	optionsFrame:SetWidth(520)
+	optionsFrame:SetHeight(400)
+	optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+	optionsFrame:SetFrameStrata("DIALOG")
+	optionsFrame:SetMovable(true)
+	optionsFrame:EnableMouse(true)
+	optionsFrame:RegisterForDrag("LeftButton")
+	optionsFrame:SetScript("OnDragStart", function() this:StartMoving() end)
+	optionsFrame:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+	optionsFrame:SetBackdrop({
 		bgFile = [[Interface\DialogFrame\UI-DialogBox-Background]],
 		edgeFile = [[Interface\DialogFrame\UI-DialogBox-Border]],
 		tile = true,
@@ -615,40 +856,30 @@ create_options = function()
 		edgeSize = 24,
 		insets = { left = 6, right = 6, top = 6, bottom = 6 },
 	})
-	options:SetBackdropColor(0.08, 0.10, 0.13, 0.98)
-	options:SetBackdropBorderColor(0.45, 0.52, 0.60, 1)
-	options:Hide()
+	optionsFrame:SetBackdropColor(0.08, 0.10, 0.13, 0.98)
+	optionsFrame:SetBackdropBorderColor(0.45, 0.52, 0.60, 1)
+	optionsFrame:Hide()
 
-	local title = options:CreateFontString(nil, 'OVERLAY')
-	title:SetPoint('TOPLEFT', options, 'TOPLEFT', 18, -15)
-	title:SetFont([[Fonts\FRIZQT__.TTF]], 14)
-	title:SetTextColor(1, 0.82, 0)
-	title:SetText('Cooline')
-	options.title = title
+	MakeText(optionsFrame, "Cooline", 18, -16, 14, "title")
+	MakeText(optionsFrame, "v" .. VERSION, 75, -18, 10, "muted")
 
-	local version = options:CreateFontString(nil, 'OVERLAY')
-	version:SetPoint('LEFT', title, 'RIGHT', 7, 0)
-	version:SetFont([[Fonts\FRIZQT__.TTF]], 10)
-	version:SetTextColor(0.65, 0.70, 0.76)
-	version:SetText('v' .. COOLINE_VERSION)
+	close = MakeButton(optionsFrame, "X", 24)
+	close:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -12, -11)
+	close:SetScript("OnClick", function() optionsFrame:Hide() end)
 
-	local close = make_button(options, 'X', 24, 22)
-	close:SetPoint('TOPRIGHT', options, 'TOPRIGHT', -12, -11)
-	close:SetScript('OnClick', function() options:Hide() end)
+	appearanceTab = MakeButton(optionsFrame, "Appearance", 105)
+	appearanceTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 18, -45)
 
-	options.appearanceTab = make_button(options, 'Appearance', 105, 24)
-	options.appearanceTab:SetPoint('TOPLEFT', options, 'TOPLEFT', 18, -45)
+	cooldownsTab = MakeButton(optionsFrame, "Cooldowns", 105)
+	cooldownsTab:SetPoint("LEFT", appearanceTab, "RIGHT", 4, 0)
 
-	options.cooldownsTab = make_button(options, 'Cooldowns', 105, 24)
-	options.cooldownsTab:SetPoint('LEFT', options.appearanceTab, 'RIGHT', 4, 0)
+	advancedTab = MakeButton(optionsFrame, "Advanced", 105)
+	advancedTab:SetPoint("LEFT", cooldownsTab, "RIGHT", 4, 0)
 
-	options.advancedTab = make_button(options, 'Advanced', 105, 24)
-	options.advancedTab:SetPoint('LEFT', options.cooldownsTab, 'RIGHT', 4, 0)
-
-	options.panel = CreateFrame('Frame', nil, options)
-	options.panel:SetPoint('TOPLEFT', options, 'TOPLEFT', 16, -76)
-	options.panel:SetPoint('BOTTOMRIGHT', options, 'BOTTOMRIGHT', -16, 42)
-	options.panel:SetBackdrop({
+	panel = CreateFrame("Frame", nil, optionsFrame)
+	panel:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 16, -76)
+	panel:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -16, 42)
+	panel:SetBackdrop({
 		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
 		edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
 		tile = true,
@@ -656,186 +887,212 @@ create_options = function()
 		edgeSize = 12,
 		insets = { left = 3, right = 3, top = 3, bottom = 3 },
 	})
-	options.panel:SetBackdropColor(0.04, 0.05, 0.07, 0.88)
-	options.panel:SetBackdropBorderColor(0.30, 0.36, 0.43, 1)
+	panel:SetBackdropColor(0.04, 0.05, 0.07, 0.88)
+	panel:SetBackdropBorderColor(0.30, 0.36, 0.43, 1)
 
-	options.appearancePage = CreateFrame('Frame', nil, options.panel)
-	options.appearancePage:SetAllPoints(options.panel)
+	page = CreateFrame("Frame", nil, panel)
+	page:SetAllPoints(panel)
+	optionsFrame.appearancePage = page
 
-	options.placeholderPage = CreateFrame('Frame', nil, options.panel)
-	options.placeholderPage:SetAllPoints(options.panel)
-	options.placeholderPage:Hide()
-	options.placeholderTitle = options_label(options.placeholderPage, '', 18, -20, 14)
-	options.placeholderText = options_body_text(options.placeholderPage, 'Reserved for a later 1.9.x build.', 18, -48)
+	placeholder = CreateFrame("Frame", nil, panel)
+	placeholder:SetAllPoints(panel)
+	placeholder:Hide()
+	optionsFrame.placeholderPage = placeholder
+	optionsFrame.placeholderTitle = MakeText(placeholder, "", 18, -20, 14, "title")
+	MakeText(placeholder, "Reserved for a later 1.9.x build.", 18, -48, 11)
 
-	local function show_page(page)
-		options.appearancePage:Hide()
-		options.placeholderPage:Hide()
+	local function ShowPage(which)
+		page:Hide()
+		placeholder:Hide()
 
-		if page == 'appearance' then
-			options.appearancePage:Show()
-		elseif page == 'cooldowns' then
-			options.placeholderTitle:SetText('Cooldowns')
-			options.placeholderPage:Show()
+		if which == "appearance" then
+			page:Show()
+		elseif which == "cooldowns" then
+			optionsFrame.placeholderTitle:SetText("Cooldowns")
+			placeholder:Show()
 		else
-			options.placeholderTitle:SetText('Advanced')
-			options.placeholderPage:Show()
+			optionsFrame.placeholderTitle:SetText("Advanced")
+			placeholder:Show()
 		end
 	end
 
-	options.appearanceTab:SetScript('OnClick', function() show_page('appearance') end)
-	options.cooldownsTab:SetScript('OnClick', function() show_page('cooldowns') end)
-	options.advancedTab:SetScript('OnClick', function() show_page('advanced') end)
+	appearanceTab:SetScript("OnClick", function() ShowPage("appearance") end)
+	cooldownsTab:SetScript("OnClick", function() ShowPage("cooldowns") end)
+	advancedTab:SetScript("OnClick", function() ShowPage("advanced") end)
 
-	options_label(options.appearancePage, 'Appearance', 18, -18, 14)
+	MakeText(page, "Appearance", 18, -18, 14, "title")
+	optionsFrame.scope = MakeText(page, "", 18, -45, 11)
 
-	options.scopeText = options_body_text(options.appearancePage, '', 18, -45)
-
-	options.charVisuals = make_checkbox(
-		options.appearancePage,
-		'Use character-specific appearance',
+	optionsFrame.characterVisuals = MakeCheckbox(
+		page,
+		"Use character-specific appearance",
 		18,
 		-67
 	)
 
-	options_label(options.appearancePage, 'Size', 18, -108, 12)
+	MakeText(page, "Size", 18, -108, 12, "title")
+	optionsFrame.width = MakeSlider(page, "Width", 28, -140, 250, 120, 720, 1)
+	optionsFrame.height = MakeSlider(page, "Height", 28, -188, 250, 8, 48, 1)
 
-	options.widthSlider = make_slider(options.appearancePage, 'Width', 28, -140, 250, 120, 720, 1)
-	options.heightSlider = make_slider(options.appearancePage, 'Height', 28, -188, 250, 8, 48, 1)
+	MakeText(page, "Layout", 330, -108, 12, "title")
+	optionsFrame.vertical = MakeCheckbox(page, "Vertical", 330, -137)
+	optionsFrame.reverse = MakeCheckbox(page, "Reverse direction", 330, -168)
 
-	options_label(options.appearancePage, 'Layout', 330, -108, 12)
+	MakeText(page, "Opacity", 18, -232, 12, "title")
+	optionsFrame.activeAlpha = MakeSlider(page, "Active", 28, -264, 250, 10, 100, 5)
+	optionsFrame.inactiveAlpha = MakeSlider(page, "Inactive", 28, -312, 250, 0, 100, 5)
 
-	options.verticalCheck = make_checkbox(options.appearancePage, 'Vertical', 330, -137)
-	options.reverseCheck = make_checkbox(options.appearancePage, 'Reverse direction', 330, -168)
+	reset = MakeButton(optionsFrame, "Reset Appearance", 130)
+	reset:SetPoint("BOTTOMLEFT", optionsFrame, "BOTTOMLEFT", 18, 12)
 
-	options_label(options.appearancePage, 'Opacity', 18, -232, 12)
+	local done = MakeButton(optionsFrame, "Close", 80)
+	done:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -18, 12)
+	done:SetScript("OnClick", function() optionsFrame:Hide() end)
 
-	options.activeSlider = make_slider(options.appearancePage, 'Active', 28, -264, 250, 10, 100, 5)
-	options.inactiveSlider = make_slider(options.appearancePage, 'Inactive', 28, -312, 250, 0, 100, 5)
-
-	options.reset = make_button(options, 'Reset Appearance', 130, 24)
-	options.reset:SetPoint('BOTTOMLEFT', options, 'BOTTOMLEFT', 18, 12)
-
-	options.done = make_button(options, 'Close', 80, 24)
-	options.done:SetPoint('BOTTOMRIGHT', options, 'BOTTOMRIGHT', -18, 12)
-	options.done:SetScript('OnClick', function() options:Hide() end)
-
-	function options.refresh()
-		options.updating = true
-
-		options.charVisuals:SetChecked(CoolineCharDB.useCharacterVisuals and 1 or nil)
-		options.scopeText:SetText(
-			CoolineCharDB.useCharacterVisuals
-			and 'Editing: this character'
-			or 'Editing: account-wide'
-		)
-
-		options.widthSlider:SetValue(cooline_theme.width)
-		options.widthSlider.valueText:SetText(tostring(cooline_theme.width))
-
-		options.heightSlider:SetValue(cooline_theme.height)
-		options.heightSlider.valueText:SetText(tostring(cooline_theme.height))
-
-		options.verticalCheck:SetChecked(cooline_theme.vertical and 1 or nil)
-		options.reverseCheck:SetChecked(cooline_theme.reverse and 1 or nil)
-
-		options.activeSlider:SetValue(floor(cooline_theme.activealpha * 100 + 0.5))
-		options.activeSlider.valueText:SetText(floor(cooline_theme.activealpha * 100 + 0.5) .. '%')
-
-		options.inactiveSlider:SetValue(floor(cooline_theme.inactivealpha * 100 + 0.5))
-		options.inactiveSlider.valueText:SetText(floor(cooline_theme.inactivealpha * 100 + 0.5) .. '%')
-
-		options.updating = false
-	end
-
-	options.charVisuals:SetScript('OnClick', function()
-		set_character_visuals(this:GetChecked() and true or false)
-		cooline.apply_visual_settings()
-		options.refresh()
+	optionsFrame.characterVisuals:SetScript("OnClick", function()
+		SelectVisualScope(this:GetChecked() and true or false)
+		ApplyVisualLayout()
+		RefreshOptions()
 	end)
 
-	options.widthSlider:SetScript('OnValueChanged', function()
-		if options.updating then return end
-		cooline_theme.width = floor(this:GetValue() + 0.5)
-		this.valueText:SetText(tostring(cooline_theme.width))
-		cooline.apply_visual_settings()
+	optionsFrame.width:SetScript("OnValueChanged", function()
+		if optionsFrame.updating then return end
+		visuals.width = floor(this:GetValue() + 0.5)
+		this.valueText:SetText(tostring(visuals.width))
+		ApplyVisualLayout()
 	end)
 
-	options.heightSlider:SetScript('OnValueChanged', function()
-		if options.updating then return end
-		cooline_theme.height = floor(this:GetValue() + 0.5)
-		this.valueText:SetText(tostring(cooline_theme.height))
-		cooline.apply_visual_settings()
+	optionsFrame.height:SetScript("OnValueChanged", function()
+		if optionsFrame.updating then return end
+		visuals.height = floor(this:GetValue() + 0.5)
+		this.valueText:SetText(tostring(visuals.height))
+		ApplyVisualLayout()
 	end)
 
-	options.verticalCheck:SetScript('OnClick', function()
-		cooline_theme.vertical = this:GetChecked() and true or false
-		cooline.apply_visual_settings()
+	optionsFrame.vertical:SetScript("OnClick", function()
+		visuals.vertical = this:GetChecked() and true or false
+		ApplyVisualLayout()
 	end)
 
-	options.reverseCheck:SetScript('OnClick', function()
-		cooline_theme.reverse = this:GetChecked() and true or false
-		cooline.apply_visual_settings()
+	optionsFrame.reverse:SetScript("OnClick", function()
+		visuals.reverse = this:GetChecked() and true or false
+		ApplyVisualLayout()
 	end)
 
-	options.activeSlider:SetScript('OnValueChanged', function()
-		if options.updating then return end
-		local value = floor(this:GetValue() + 0.5)
-		cooline_theme.activealpha = value / 100
-		this.valueText:SetText(value .. '%')
-		cooline.apply_visual_settings()
+	optionsFrame.activeAlpha:SetScript("OnValueChanged", function()
+		local value
+		if optionsFrame.updating then return end
+		value = floor(this:GetValue() + 0.5)
+		visuals.activealpha = value / 100
+		this.valueText:SetText(value .. "%")
 	end)
 
-	options.inactiveSlider:SetScript('OnValueChanged', function()
-		if options.updating then return end
-		local value = floor(this:GetValue() + 0.5)
-		cooline_theme.inactivealpha = value / 100
-		this.valueText:SetText(value .. '%')
-		cooline.apply_visual_settings()
+	optionsFrame.inactiveAlpha:SetScript("OnValueChanged", function()
+		local value
+		if optionsFrame.updating then return end
+		value = floor(this:GetValue() + 0.5)
+		visuals.inactivealpha = value / 100
+		this.valueText:SetText(value .. "%")
 	end)
 
-	options.reset:SetScript('OnClick', function()
-		local x, y = cooline_theme.x, cooline_theme.y
+	reset:SetScript("OnClick", function()
+		local x = visuals.x
+		local y = visuals.y
+
 		if CoolineCharDB.useCharacterVisuals then
-			CoolineCharDB.visuals = copy_table(factory_visuals)
-			cooline_theme = CoolineCharDB.visuals
+			CoolineCharDB.visuals = CopyTable(DEFAULT_VISUALS)
+			visuals = CoolineCharDB.visuals
 		else
-			CoolineDB.visuals = copy_table(factory_visuals)
-			cooline_theme = CoolineDB.visuals
+			CoolineDB.visuals = CopyTable(DEFAULT_VISUALS)
+			visuals = CoolineDB.visuals
 		end
 
-		-- Reset appearance values, but do not unexpectedly move the bar.
-		cooline_theme.x = x
-		cooline_theme.y = y
+		-- Reset visual appearance without unexpectedly moving the bar.
+		visuals.x = x
+		visuals.y = y
 
-		cooline.apply_visual_settings()
-		options.refresh()
+		ApplyVisualLayout()
+		RefreshOptions()
 	end)
 
-	show_page('appearance')
+	ShowPage("appearance")
 end
 
-local function toggle_options()
-	create_options()
+local function ToggleOptions()
+	BuildOptions()
 
-	if options:IsShown() then
-		options:Hide()
+	if optionsFrame:IsShown() then
+		optionsFrame:Hide()
 	else
-		options.refresh()
-		options:Show()
+		RefreshOptions()
+		optionsFrame:Show()
 	end
 end
 
-SLASH_COOLINE1 = '/cooline'
-SlashCmdList['COOLINE'] = function(msg)
-	toggle_options()
+SLASH_COOLINE1 = "/cooline"
+SlashCmdList["COOLINE"] = function(msg)
+	ToggleOptions()
 end
 
+-- ============================================================================
+-- Events and update loop
+-- ============================================================================
 
-function cooline.BAG_UPDATE_COOLDOWN()
-	cooline.detect_cooldowns()
+local function OnVariablesLoaded()
+	InitialiseSavedVariables()
+	BuildBar()
+	BuildOptions()
+
+	bar:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+	bar:RegisterEvent("BAG_UPDATE_COOLDOWN")
+	bar:RegisterEvent("PLAYER_ENTERING_WORLD")
+	bar:RegisterEvent("SPELLS_CHANGED")
+	bar:RegisterEvent("BAG_UPDATE")
+	bar:RegisterEvent("UNIT_INVENTORY_CHANGED")
+
+	ReconcileCooldowns()
+
+	DEFAULT_CHAT_FRAME:AddMessage(
+		"|c00ffff00Cooline " .. VERSION ..
+		" loaded: hold <alt> and left-drag the bar to move it.|r"
+	)
 end
 
-function cooline.SPELL_UPDATE_COOLDOWN()
-	cooline.detect_cooldowns()
-end
+bar:RegisterEvent("VARIABLES_LOADED")
+
+bar:SetScript("OnEvent", function()
+	if event == "VARIABLES_LOADED" then
+		OnVariablesLoaded()
+	elseif initialised then
+		-- Events request an immediate reconciliation. The periodic scan below
+		-- remains the safety net if an event is missed by the client/server.
+		ReconcileCooldowns()
+	end
+end)
+
+bar:SetScript("OnUpdate", function()
+	local elapsed = arg1 or 0
+
+	if not initialised then
+		return
+	end
+
+	bar:EnableMouse(IsAltKeyDown())
+
+	if bar.dragging and not IsAltKeyDown() then
+		StopDragging()
+	end
+
+	scanElapsed = scanElapsed + elapsed
+	renderElapsed = renderElapsed + elapsed
+
+	if scanElapsed >= SCAN_INTERVAL then
+		scanElapsed = 0
+		ReconcileCooldowns()
+	end
+
+	if renderElapsed >= RENDER_INTERVAL_IDLE then
+		renderElapsed = 0
+		RenderCooldowns()
+	end
+end)
