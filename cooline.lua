@@ -57,47 +57,46 @@ local function apply_defaults(target, defaults)
 	end
 end
 
--- Account-wide SavedVariables.
-CoolineDB = CoolineDB or {}
-CoolineDB.visuals = CoolineDB.visuals or {}
-apply_defaults(CoolineDB.visuals, factory_visuals)
+-- SavedVariables are not available until VARIABLES_LOADED on Vanilla 1.12.1.
+-- These references are initialised there.
+local cooline_theme
 
--- Per-character SavedVariables.
-CoolineCharDB = CoolineCharDB or {}
+local function initialise_settings()
+	-- Account-wide SavedVariables.
+	CoolineDB = CoolineDB or {}
+	CoolineDB.visuals = CoolineDB.visuals or {}
+	apply_defaults(CoolineDB.visuals, factory_visuals)
 
-if CoolineCharDB.useCharacterVisuals == nil then
-	CoolineCharDB.useCharacterVisuals = false
-end
+	-- Per-character SavedVariables.
+	CoolineCharDB = CoolineCharDB or {}
 
-CoolineCharDB.filters = CoolineCharDB.filters or {}
-if CoolineCharDB.filters.mode == nil then
-	CoolineCharDB.filters.mode = "blacklist"
-end
-if CoolineCharDB.filters.blacklist == nil then
-	CoolineCharDB.filters.blacklist = { "Hearthstone" }
-end
-if CoolineCharDB.filters.whitelist == nil then
-	CoolineCharDB.filters.whitelist = {}
-end
+	if CoolineCharDB.useCharacterVisuals == nil then
+		CoolineCharDB.useCharacterVisuals = false
+	end
 
--- A character visual profile is only created when the character actually
--- opts into character-specific visuals.
-if CoolineCharDB.useCharacterVisuals and not CoolineCharDB.visuals then
-	CoolineCharDB.visuals = copy_table(CoolineDB.visuals)
-end
+	CoolineCharDB.filters = CoolineCharDB.filters or {}
+	if CoolineCharDB.filters.mode == nil then
+		CoolineCharDB.filters.mode = "blacklist"
+	end
+	if CoolineCharDB.filters.blacklist == nil then
+		CoolineCharDB.filters.blacklist = { "Hearthstone" }
+	end
+	if CoolineCharDB.filters.whitelist == nil then
+		CoolineCharDB.filters.whitelist = {}
+	end
 
-local function get_visual_settings()
+	-- A character visual profile is only created when the character actually
+	-- opts into character-specific visuals.
 	if CoolineCharDB.useCharacterVisuals then
 		if not CoolineCharDB.visuals then
 			CoolineCharDB.visuals = copy_table(CoolineDB.visuals)
 		end
 		apply_defaults(CoolineCharDB.visuals, factory_visuals)
-		return CoolineCharDB.visuals
+		cooline_theme = CoolineCharDB.visuals
+	else
+		cooline_theme = CoolineDB.visuals
 	end
-	return CoolineDB.visuals
 end
-
-local cooline_theme = get_visual_settings()
 
 local function list_contains_name(list, name)
 	if not name then
@@ -374,6 +373,7 @@ function cooline.label(text, offset, just)
 end
 
 function cooline.VARIABLES_LOADED()
+	initialise_settings()
 
 	cooline:SetClampedToScreen(true)
 	cooline:SetMovable(true)
