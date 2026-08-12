@@ -16,10 +16,11 @@ This fork intends to keep the genuinely excellent base behaviour, but has been c
 - Configurable bar, icon and opacity settings
 - Per-character spell and item filtering - Blacklist and whitelist support
 - Right-click the Cooline bar to open options - Alt-click to reposition
+- A few basic skins to start with
 
 ## Version
 
-**1.9.5** — development version of the redesigned Cooline.
+**1.9.6** — development version of the redesigned Cooline.
 
 The 1.9.x series is intended for development and testing. Once the redesigned addon is stable, it will become **Cooline 2.0.0**.
 
