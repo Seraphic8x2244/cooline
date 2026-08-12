@@ -1,8 +1,6 @@
--- Cooline 1.9.1 timeline test
--- Clean single-file rebuild for WoW 1.12.1.
--- This stage adds the real nonlinear Cooline timeline and smooth spell movement.
+-- Cooline 1.9.5
 
-local VERSION = "1.9.1-itemidentity"
+local VERSION = "1.9.5"
 
 local DEFAULTS = {
 	length = 360,
@@ -1272,7 +1270,7 @@ local function BuildOptions()
 	tinsert(UISpecialFrames, "CoolineOptionsFrame")
 
 	MakeText(optionsFrame, "Cooline", 18, -16, 14, true)
-	MakeText(optionsFrame, "v1.9.1", 75, -18, 10, false)
+	MakeText(optionsFrame, "v1.9.5", 75, -18, 10, false)
 
 	close = MakeButton(optionsFrame, "X", 24)
 	close:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -12, -11)
