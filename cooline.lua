@@ -1,7 +1,8 @@
--- Cooline 1.9.1 core test
--- Minimal clean-room baseline for WoW 1.12.1.
+-- Cooline 1.9.1 timeline test
+-- Clean single-file rebuild for WoW 1.12.1.
+-- This stage adds the real nonlinear Cooline timeline and smooth spell movement.
 
-local VERSION = "1.9.1-coretest"
+local VERSION = "1.9.1-timeline"
 
 local DEFAULTS = {
 	width = 360,
@@ -15,6 +16,9 @@ local DEFAULTS = {
 local bar = CreateFrame("Frame", "CoolineBar", UIParent)
 local cooldowns = {}
 local initialised = false
+local scanElapsed = 0
+local SCAN_INTERVAL = 0.50
+local visuals
 
 local function ApplyDefaults(target, defaults)
 	local k, v
@@ -38,14 +42,47 @@ local function InitialiseSettings()
 	if CoolineCharDB.useCharacterVisuals then
 		CoolineCharDB.visuals = CoolineCharDB.visuals or {}
 		ApplyDefaults(CoolineCharDB.visuals, CoolineDB.visuals)
-		bar.settings = CoolineCharDB.visuals
+		visuals = CoolineCharDB.visuals
 	else
-		bar.settings = CoolineDB.visuals
+		visuals = CoolineDB.visuals
 	end
 end
 
+local function TimelineOffset(timeLeft)
+	local section = visuals.width / 6
+
+	if timeLeft <= 0 then
+		return 0
+	elseif timeLeft < 1 then
+		return section * timeLeft
+	elseif timeLeft < 3 then
+		return section * (1 + ((timeLeft - 1) / 2))
+	elseif timeLeft < 10 then
+		return section * (2 + ((timeLeft - 3) / 7))
+	elseif timeLeft < 30 then
+		return section * (3 + ((timeLeft - 10) / 20))
+	elseif timeLeft < 120 then
+		return section * (4 + ((timeLeft - 30) / 90))
+	elseif timeLeft < 360 then
+		return section * (5 + ((timeLeft - 120) / 240))
+	end
+
+	return visuals.width
+end
+
 local function BuildBar()
-	local s = bar.settings
+	local s = visuals
+	local section = s.width / 6
+	local labels = {
+		{ "0", 0, "LEFT" },
+		{ "1", section, "CENTER" },
+		{ "3", section * 2, "CENTER" },
+		{ "10", section * 3, "CENTER" },
+		{ "30", section * 4, "CENTER" },
+		{ "2m", section * 5, "CENTER" },
+		{ "6m", section * 6, "RIGHT" },
+	}
+	local i, data, fs
 
 	bar:SetWidth(s.width)
 	bar:SetHeight(s.height)
@@ -53,28 +90,41 @@ local function BuildBar()
 	bar:SetMovable(true)
 	bar:EnableMouse(true)
 	bar:RegisterForDrag("LeftButton")
+	bar:SetAlpha(s.inactivealpha)
 
 	bar.bg = bar:CreateTexture(nil, "BACKGROUND")
 	bar.bg:SetAllPoints(bar)
-	bar.bg:SetTexture(0, 0, 0, 0.55)
+	bar.bg:SetTexture([[Interface\TargetingFrame\UI-StatusBar]])
+	bar.bg:SetVertexColor(0, 0, 0, 0.5)
 
-	bar.edge = bar:CreateTexture(nil, "ARTWORK")
-	bar.edge:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
-	bar.edge:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
-	bar.edge:SetTexture(0.18, 0.18, 0.18, 1)
+	bar.border = CreateFrame("Frame", nil, bar)
+	bar.border:SetPoint("TOPLEFT", bar, "TOPLEFT", -4, 4)
+	bar.border:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 4, -4)
+	bar.border:SetBackdrop({
+		edgeFile = [[Interface\DialogFrame\UI-DialogBox-Border]],
+		edgeSize = 16,
+	})
+	bar.border:SetBackdropBorderColor(1, 1, 1, 1)
 
-	bar.inner = bar:CreateTexture(nil, "OVERLAY")
-	bar.inner:SetPoint("TOPLEFT", bar, "TOPLEFT", 1, -1)
-	bar.inner:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -1, 1)
-	bar.inner:SetTexture(0.05, 0.05, 0.05, 1)
+	for i, data in ipairs(labels) do
+		fs = bar:CreateFontString(nil, "OVERLAY")
+		fs:SetFont([[Fonts\FRIZQT__.TTF]], 10)
+		fs:SetTextColor(1, 1, 1, 0.8)
+		fs:SetShadowColor(0, 0, 0, 0.5)
+		fs:SetShadowOffset(1, -1)
+		fs:SetText(data[1])
+		fs:SetWidth(30)
+		fs:SetHeight(12)
+		fs:SetJustifyH("CENTER")
 
-	bar.label = bar:CreateFontString(nil, "OVERLAY")
-	bar.label:SetPoint("CENTER", bar, "CENTER", 0, 0)
-	bar.label:SetFont([[Fonts\FRIZQT__.TTF]], 10)
-	bar.label:SetTextColor(1, 0.82, 0)
-	bar.label:SetText("Cooline core test")
-
-	bar:SetAlpha(s.inactivealpha)
+		if data[3] == "LEFT" then
+			fs:SetPoint("LEFT", bar, "LEFT", 1, 0)
+		elseif data[3] == "RIGHT" then
+			fs:SetPoint("RIGHT", bar, "RIGHT", -1, 0)
+		else
+			fs:SetPoint("CENTER", bar, "LEFT", data[2], 0)
+		end
+	end
 
 	bar:SetScript("OnDragStart", function()
 		if IsAltKeyDown() then
@@ -85,13 +135,12 @@ local function BuildBar()
 	bar:SetScript("OnDragStop", function()
 		local x, y, ux, uy
 		this:StopMovingOrSizing()
-
 		x, y = this:GetCenter()
 		ux, uy = UIParent:GetCenter()
 
 		if x and y and ux and uy then
-			s.x = floor(x - ux + 0.5)
-			s.y = floor(y - uy + 0.5)
+			visuals.x = floor(x - ux + 0.5)
+			visuals.y = floor(y - uy + 0.5)
 		end
 	end)
 
@@ -99,7 +148,7 @@ local function BuildBar()
 end
 
 local function GetSpellCount()
-	local tabs = GetNumSpellTabs()
+	local tabs = GetNumSpellTabs() or 0
 	local i
 	local _, _, offset, num
 	local highest = 0
@@ -114,103 +163,138 @@ local function GetSpellCount()
 	return highest
 end
 
-local function ClearCooldownFrames()
-	local i
-	for i = 1, table.getn(cooldowns) do
-		cooldowns[i]:Hide()
+local function EnsureCooldown(name)
+	local cd = cooldowns[name]
+	local size
+
+	if not cd then
+		cd = CreateFrame("Frame", nil, bar.border)
+		size = visuals.height + 4
+		cd:SetWidth(size)
+		cd:SetHeight(size)
+		cd:SetBackdrop({
+			bgFile = [[Interface\AddOns\Cooline\artwork\backdrop.tga]]
+		})
+		cd:SetBackdropColor(0.8, 0.4, 0, 1)
+
+		cd.icon = cd:CreateTexture(nil, "ARTWORK")
+		cd.icon:SetPoint("TOPLEFT", cd, "TOPLEFT", 1, -1)
+		cd.icon:SetPoint("BOTTOMRIGHT", cd, "BOTTOMRIGHT", -1, 1)
+		cd.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
+		cooldowns[name] = cd
 	end
-end
 
-local function EnsureCooldownFrame(index)
-	local frame = cooldowns[index]
-
-	if not frame then
-		frame = CreateFrame("Frame", nil, bar)
-		frame:SetWidth(20)
-		frame:SetHeight(20)
-
-		frame.icon = frame:CreateTexture(nil, "ARTWORK")
-		frame.icon:SetAllPoints(frame)
-
-		cooldowns[index] = frame
-	end
-
-	return frame
+	return cd
 end
 
 local function ScanSpells()
-	local count = GetSpellCount()
+	local spellCount = GetSpellCount()
 	local id
 	local name
 	local startTime, duration, enabled
 	local texture
-	local frame
-	local shown = 0
+	local cd
+	local seen = {}
 	local now = GetTime()
-	local remaining
-	local offset
 
-	ClearCooldownFrames()
-
-	for id = 1, count do
+	for id = 1, spellCount do
 		name = GetSpellName(id, BOOKTYPE_SPELL)
 
 		if name then
 			startTime, duration, enabled = GetSpellCooldown(id, BOOKTYPE_SPELL)
 
 			if enabled == 1 and duration and duration > 2.5 then
-				remaining = (startTime + duration) - now
-
-				if remaining > 0 then
-					shown = shown + 1
-					frame = EnsureCooldownFrame(shown)
+				if (startTime + duration) > now then
+					cd = EnsureCooldown(name)
 					texture = GetSpellTexture(id, BOOKTYPE_SPELL)
-					frame.icon:SetTexture(texture)
 
-					-- Linear placement for this core test only.
-					offset = remaining
-					if offset > 60 then
-						offset = 60
-					end
-					offset = (offset / 60) * bar.settings.width
-
-					frame:ClearAllPoints()
-					frame:SetPoint("CENTER", bar, "LEFT", offset, 0)
-					frame:Show()
+					cd.startTime = startTime
+					cd.duration = duration
+					cd.endTime = startTime + duration
+					cd.icon:SetTexture(texture)
+					cd:Show()
+					seen[name] = true
 				end
 			end
 		end
 	end
 
-	if shown > 0 then
-		bar:SetAlpha(bar.settings.activealpha)
-		bar.label:Hide()
-	else
-		bar:SetAlpha(bar.settings.inactivealpha)
-		bar.label:Show()
+	for name, cd in pairs(cooldowns) do
+		if not seen[name] and (not cd.endTime or cd.endTime <= now) then
+			cd:Hide()
+			cd.endTime = nil
+		end
 	end
 end
 
+local function Render()
+	local now = GetTime()
+	local anyActive = false
+	local name, cd
+	local remaining
+	local offset
+	local level = 2
+
+	for name, cd in pairs(cooldowns) do
+		if cd.endTime then
+			remaining = cd.endTime - now
+
+			if remaining > 0 then
+				anyActive = true
+				offset = TimelineOffset(remaining)
+
+				cd:SetFrameLevel(level)
+				level = level + 1
+
+				cd:ClearAllPoints()
+				cd:SetPoint("CENTER", bar, "LEFT", offset, 0)
+				cd:SetAlpha(1)
+				cd:Show()
+			else
+				cd:Hide()
+				cd.endTime = nil
+			end
+		end
+	end
+
+	bar:SetAlpha(anyActive and visuals.activealpha or visuals.inactivealpha)
+end
+
+local function OnVariablesLoaded()
+	InitialiseSettings()
+	BuildBar()
+	ScanSpells()
+
+	bar:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+	bar:RegisterEvent("SPELLS_CHANGED")
+	bar:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+	DEFAULT_CHAT_FRAME:AddMessage(
+		"|c00ffff00Cooline " .. VERSION .. " loaded.|r"
+	)
+end
+
 bar:RegisterEvent("VARIABLES_LOADED")
-bar:RegisterEvent("SPELL_UPDATE_COOLDOWN")
-bar:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 bar:SetScript("OnEvent", function()
 	if event == "VARIABLES_LOADED" then
-		InitialiseSettings()
-		BuildBar()
-		DEFAULT_CHAT_FRAME:AddMessage("|c00ffff00Cooline core test loaded.|r")
+		OnVariablesLoaded()
 	elseif initialised then
 		ScanSpells()
 	end
 end)
 
 bar:SetScript("OnUpdate", function()
-	if initialised then
-		bar.scan = (bar.scan or 0) + arg1
-		if bar.scan >= 0.5 then
-			bar.scan = 0
-			ScanSpells()
-		end
+	if not initialised then
+		return
 	end
+
+	scanElapsed = scanElapsed + arg1
+	if scanElapsed >= SCAN_INTERVAL then
+		scanElapsed = 0
+		ScanSpells()
+	end
+
+	Render()
 end)
