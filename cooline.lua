@@ -13,6 +13,7 @@ local DEFAULTS = {
 	reverse = false,
 	inactivealpha = 0.5,
 	activealpha = 1.0,
+	cooldownanimate = 150,
 }
 
 local STYLE_PRESETS = {
@@ -861,6 +862,43 @@ local function ReconcileAllCooldowns()
 	end
 end
 
+local COOLDOWN_PULSE_DURATION = 0.26
+
+local function TriggerCooldownPulse(spellName)
+	local cd
+	local key
+	local name, candidate
+	local now
+
+	if not spellName or not visuals or not visuals.cooldownanimate then
+		return
+	end
+
+	if visuals.cooldownanimate == 100 then
+		return
+	end
+
+	key = "spell:" .. spellName
+	cd = cooldowns[key]
+
+	if not cd then
+		for name, candidate in pairs(cooldowns) do
+			if string.sub(name, 1, 6) == "spell:" and
+			   strupper(string.sub(name, 7)) == strupper(spellName) then
+				cd = candidate
+				break
+			end
+		end
+	end
+
+	now = GetTime()
+
+	if cd and cd.endTime and cd.endTime > now then
+		-- Every failed cast restarts the pulse.
+		cd.pulseStart = now
+	end
+end
+
 local function Render()
 	local now = GetTime()
 	local anyActive = false
@@ -868,6 +906,11 @@ local function Render()
 	local remaining
 	local offset
 	local level = 2
+	local baseSize
+	local drawSize
+	local progress
+	local pulse
+	local targetScale
 
 	for name, cd in pairs(cooldowns) do
 		if cd.endTime then
@@ -880,12 +923,41 @@ local function Render()
 				cd:SetFrameLevel(level)
 				level = level + 1
 
+				baseSize = GetIconSizeForKey(name)
+				drawSize = baseSize
+
+				if cd.pulseStart then
+					progress = (now - cd.pulseStart) / COOLDOWN_PULSE_DURATION
+
+					if progress >= 1 then
+						cd.pulseStart = nil
+					elseif progress >= 0 then
+						-- Smooth triangle: normal -> selected scale -> normal.
+						if progress < 0.5 then
+							pulse = progress * 2
+						else
+							pulse = (1 - progress) * 2
+						end
+
+						targetScale = visuals.cooldownanimate / 100
+						drawSize = baseSize * (1 + ((targetScale - 1) * pulse))
+					end
+				end
+
+				-- Only protect the frame API from invalid dimensions.
+				if drawSize < 1 then
+					drawSize = 1
+				end
+
+				cd:SetWidth(drawSize)
+				cd:SetHeight(drawSize)
 				PlaceOnTimeline(cd, offset)
 				cd:SetAlpha(1)
 				cd:Show()
 			else
 				cd:Hide()
 				cd.endTime = nil
+				cd.pulseStart = nil
 			end
 		end
 	end
@@ -1024,7 +1096,7 @@ local function MakeValueSlider(parent, label, x, y, width, low, high, step)
 	getglobal(name .. "Low"):SetText(tostring(low))
 	getglobal(name .. "High"):SetText(tostring(high))
 
-	slider.edit = MakeEditBox(parent, x + width + 24, y - 27, 58)
+	slider.edit = MakeEditBox(parent, x + width + 12, y - 27, 58)
 
 	return slider
 end
@@ -1040,6 +1112,16 @@ local function SetValueControlEnabled(slider, enabled)
 		slider:SetAlpha(0.45)
 		slider.edit:SetAlpha(0.45)
 		slider.edit:ClearFocus()
+	end
+end
+
+local function SetValueControlDimmed(slider, dimmed)
+	if dimmed then
+		slider:SetAlpha(0.45)
+		slider.edit:SetAlpha(0.45)
+	else
+		slider:SetAlpha(1)
+		slider.edit:SetAlpha(1)
 	end
 end
 
@@ -1139,6 +1221,11 @@ RefreshAppearanceOptions = function()
 	optionsFrame.active.edit:SetText(active .. "%")
 	optionsFrame.inactive:SetValue(min(inactive, 100))
 	optionsFrame.inactive.edit:SetText(inactive .. "%")
+
+	local animate = visuals.cooldownanimate or 150
+	optionsFrame.cooldownAnimate:SetValue(min(max(animate, 100), 200))
+	optionsFrame.cooldownAnimate.edit:SetText(animate .. "%")
+	SetValueControlDimmed(optionsFrame.cooldownAnimate, animate == 100)
 
 	if optionsFrame.styleButtons then
 		local styleKey, button
@@ -1487,10 +1574,59 @@ local function ShowOptionsPage(page)
 	end
 end
 
+local function MakeTab(parent, text, width)
+	local tab = CreateFrame("Button", nil, parent)
+	local label
+
+	tab:SetWidth(width)
+	tab:SetHeight(28)
+	tab:SetBackdrop({
+		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
+		edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
+		tile = true,
+		tileSize = 8,
+		edgeSize = 10,
+		insets = { left = 2, right = 2, top = 2, bottom = 2 },
+	})
+	tab:SetBackdropColor(0.04, 0.05, 0.07, 0.95)
+	tab:SetBackdropBorderColor(0.30, 0.36, 0.43, 1)
+
+	label = tab:CreateFontString(nil, "OVERLAY")
+	label:SetPoint("CENTER", tab, "CENTER", 0, 0)
+	label:SetFont([[Fonts\FRIZQT__.TTF]], 11)
+	label:SetTextColor(1, 0.82, 0)
+	label:SetText(text)
+	tab.label = label
+
+	return tab
+end
+
+local function SelectOptionsTab(selected)
+	local tabs = {
+		optionsFrame.appearanceTab,
+		optionsFrame.spellsTab,
+		optionsFrame.itemsTab,
+	}
+	local i, tab
+
+	for i = 1, table.getn(tabs) do
+		tab = tabs[i]
+
+		if tab == selected then
+			tab:SetBackdropColor(0.08, 0.10, 0.13, 1)
+			tab:SetBackdropBorderColor(1, 0.82, 0, 1)
+			tab.label:SetTextColor(1, 0.82, 0)
+		else
+			tab:SetBackdropColor(0.04, 0.05, 0.07, 0.90)
+			tab:SetBackdropBorderColor(0.30, 0.36, 0.43, 1)
+			tab.label:SetTextColor(0.9, 0.9, 0.9)
+		end
+	end
+end
+
 local function BuildOptions()
 	local close
 	local panel
-	local done
 	local appearanceTab
 	local spellsTab
 	local itemsTab
@@ -1535,18 +1671,21 @@ local function BuildOptions()
 	close:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -12, -11)
 	close:SetScript("OnClick", function() optionsFrame:Hide() end)
 
-	appearanceTab = MakeButton(optionsFrame, "Appearance", 105)
-	appearanceTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 18, -46)
+	appearanceTab = MakeTab(optionsFrame, "Appearance", 112)
+	appearanceTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 26, -50)
+	optionsFrame.appearanceTab = appearanceTab
 
-	spellsTab = MakeButton(optionsFrame, "Spells", 105)
+	spellsTab = MakeTab(optionsFrame, "Spells", 90)
 	spellsTab:SetPoint("LEFT", appearanceTab, "RIGHT", 4, 0)
+	optionsFrame.spellsTab = spellsTab
 
-	itemsTab = MakeButton(optionsFrame, "Items", 105)
+	itemsTab = MakeTab(optionsFrame, "Items", 90)
 	itemsTab:SetPoint("LEFT", spellsTab, "RIGHT", 4, 0)
+	optionsFrame.itemsTab = itemsTab
 
 	panel = CreateFrame("Frame", nil, optionsFrame)
-	panel:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 16, -76)
-	panel:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -16, 42)
+	panel:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 16, -72)
+	panel:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -16, 16)
 	panel:SetBackdrop({
 		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
 		edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
@@ -1561,7 +1700,9 @@ local function BuildOptions()
 	page:SetAllPoints(panel)
 	optionsFrame.appearancePage = page
 
+	-- Header row.
 	MakeText(page, "Appearance", 18, -18, 14, true)
+	optionsFrame.scope = MakeBinarySlider(page, "Account Wide", "Per Character", 360, -20, 42)
 
 	MakeText(page, "Style", 18, -50, 12, true)
 	optionsFrame.styleButtons = {}
@@ -1570,27 +1711,29 @@ local function BuildOptions()
 	optionsFrame.styleButtons.dark = MakeStylePreview(page, "dark", 254, -72)
 	optionsFrame.styleButtons.borderless = MakeStylePreview(page, "borderless", 371, -72)
 
-	MakeText(page, "Settings", 18, -136, 12, true)
-	optionsFrame.scope = MakeBinarySlider(page, "Account Wide", "Per Character", 174, -158, 140)
+	-- Upper control grid: all three rows share the same slider column and width.
+	MakeText(page, "Animate on Cooldown", 28, -145, 11, false)
+	optionsFrame.cooldownAnimate = MakeValueSlider(page, "", 244, -137, 170, 100, 200, 10)
 
 	MakeText(page, "Layout", 18, -194, 12, true)
-	MakeText(page, "Bar Direction", 28, -224, 11, false)
-	optionsFrame.direction = MakeBinarySlider(page, "Horizontal", "Vertical", 174, -226, 140)
 
-	MakeText(page, "Icon Direction", 28, -266, 11, false)
-	optionsFrame.iconDirection = MakeBinarySlider(page, "Ascending", "Descending", 174, -268, 140)
+	MakeText(page, "Bar Direction", 28, -229, 11, false)
+	optionsFrame.direction = MakeBinarySlider(page, "Horizontal", "Vertical", 244, -226, 170)
 
-	-- Lower section uses a shared row grid so Sizes and Opacity line up.
+	MakeText(page, "Icon Direction", 28, -271, 11, false)
+	optionsFrame.iconDirection = MakeBinarySlider(page, "Ascending", "Descending", 244, -268, 170)
+
+	-- Exact 50:50 lower columns.
 	MakeText(page, "Sizes", 18, -316, 12, true)
-	MakeText(page, "Opacity", 282, -316, 12, true)
+	MakeText(page, "Opacity", 264, -316, 12, true)
 
-	optionsFrame.length = MakeValueSlider(page, "Bar Length", 28, -346, 170, 100, 1000, 10)
-	optionsFrame.active = MakeValueSlider(page, "Bar Active", 292, -346, 130, 0, 100, 10)
+	optionsFrame.length = MakeValueSlider(page, "Bar Length", 28, -346, 150, 100, 1000, 10)
+	optionsFrame.active = MakeValueSlider(page, "Bar Active", 274, -346, 150, 0, 100, 10)
 
-	optionsFrame.width = MakeValueSlider(page, "Bar Width", 28, -414, 170, 2, 100, 2)
-	optionsFrame.inactive = MakeValueSlider(page, "Bar Inactive", 292, -414, 130, 0, 100, 10)
+	optionsFrame.width = MakeValueSlider(page, "Bar Width", 28, -414, 150, 2, 100, 2)
+	optionsFrame.inactive = MakeValueSlider(page, "Bar Inactive", 274, -414, 150, 0, 100, 10)
 
-	optionsFrame.oversize = MakeValueSlider(page, "Icon Oversize", 28, -482, 170, -50, 50, 2)
+	optionsFrame.oversize = MakeValueSlider(page, "Icon Oversize", 28, -482, 150, -50, 50, 2)
 
 	-- Spells page
 	spells = CreateFrame("Frame", nil, panel)
@@ -1731,10 +1874,12 @@ local function BuildOptions()
 	end)
 
 	appearanceTab:SetScript("OnClick", function()
+		SelectOptionsTab(appearanceTab)
 		ShowOptionsPage("appearance")
 	end)
 
 	spellsTab:SetScript("OnClick", function()
+		SelectOptionsTab(spellsTab)
 		optionsFrame.updating = true
 		optionsFrame.filterType:SetValue(CoolineCharDB.filters.mode == "whitelist" and 1 or 0)
 		optionsFrame.updating = false
@@ -1879,6 +2024,7 @@ local function BuildOptions()
 	end)
 
 	itemsTab:SetScript("OnClick", function()
+		SelectOptionsTab(itemsTab)
 		optionsFrame.updating = true
 		optionsFrame.itemFilterType:SetValue(CoolineCharDB.itemFilters.mode == "whitelist" and 1 or 0)
 		optionsFrame.updating = false
@@ -1980,6 +2126,41 @@ local function BuildOptions()
 	optionsFrame.itemOversize.edit:SetScript("OnEscapePressed", function()
 		this:ClearFocus()
 		RefreshItemIconOptions()
+	end)
+
+	optionsFrame.cooldownAnimate:SetScript("OnValueChanged", function()
+		if optionsFrame.updating then return end
+
+		local value = floor(this:GetValue() + 0.5)
+		visuals.cooldownanimate = value
+		this.edit:SetText(value .. "%")
+		SetValueControlDimmed(this, value == 100)
+	end)
+
+	optionsFrame.cooldownAnimate.edit:SetScript("OnEnterPressed", function()
+		local text = string.gsub(this:GetText(), "%%", "")
+		local value = tonumber(text)
+
+		this:ClearFocus()
+
+		if not value or value <= 0 then
+			RefreshAppearanceOptions()
+			return
+		end
+
+		value = floor(value + 0.5)
+		visuals.cooldownanimate = value
+
+		optionsFrame.updating = true
+		optionsFrame.cooldownAnimate:SetValue(min(max(value, 100), 200))
+		optionsFrame.updating = false
+
+		RefreshAppearanceOptions()
+	end)
+
+	optionsFrame.cooldownAnimate.edit:SetScript("OnEscapePressed", function()
+		this:ClearFocus()
+		RefreshAppearanceOptions()
 	end)
 
 	-- Appearance scripts
@@ -2119,10 +2300,7 @@ local function BuildOptions()
 		end)
 	end
 
-	done = MakeButton(optionsFrame, "Close", 80)
-	done:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -18, 12)
-	done:SetScript("OnClick", function() optionsFrame:Hide() end)
-
+	SelectOptionsTab(appearanceTab)
 	ShowOptionsPage("appearance")
 end
 
@@ -2149,6 +2327,7 @@ local function OnVariablesLoaded()
 
 	bar:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 	bar:RegisterEvent("SPELLS_CHANGED")
+	bar:RegisterEvent("CHAT_MSG_SPELL_FAILED_LOCALPLAYER")
 	bar:RegisterEvent("BAG_UPDATE_COOLDOWN")
 	bar:RegisterEvent("BAG_UPDATE")
 	bar:RegisterEvent("UNIT_INVENTORY_CHANGED")
@@ -2164,6 +2343,15 @@ bar:RegisterEvent("VARIABLES_LOADED")
 bar:SetScript("OnEvent", function()
 	if event == "VARIABLES_LOADED" then
 		OnVariablesLoaded()
+	elseif event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" and initialised then
+		local _, _, failedSpell = strfind(
+			arg1 or "",
+			"^You fail to cast (.+): Not yet recovered%.$"
+		)
+
+		if failedSpell then
+			TriggerCooldownPulse(failedSpell)
+		end
 	elseif initialised then
 		ReconcileAllCooldowns()
 	end
