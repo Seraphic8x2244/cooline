@@ -460,6 +460,40 @@ local function ApplyVisualLayout()
 	LayoutLabels()
 end
 
+local function UpdateBarAlpha(active)
+	local alpha
+	local i
+
+	if active then
+		alpha = visuals.activealpha
+	else
+		alpha = visuals.inactivealpha
+	end
+
+	-- Keep the root frame fully active for mouse handling and explicitly
+	-- control every visible component. Vanilla can be inconsistent about
+	-- inherited alpha on children created after the parent alpha was set.
+	bar:SetAlpha(1)
+
+	if bar.bg then
+		bar.bg:SetAlpha(alpha)
+	end
+
+	-- Cooldown icons are children of bar.border, so this controls the border
+	-- and all active cooldown frames together.
+	if bar.border then
+		bar.border:SetAlpha(alpha)
+	end
+
+	if bar.labels then
+		for i = 1, table.getn(bar.labels) do
+			if bar.labels[i] and bar.labels[i].frame then
+				bar.labels[i].frame:SetAlpha(alpha)
+			end
+		end
+	end
+end
+
 local function BuildBar()
 	local s = visuals
 	local labels = {
@@ -482,7 +516,6 @@ local function BuildBar()
 	end
 	bar:SetPoint("CENTER", UIParent, "CENTER", s.x, s.y)
 	bar:SetMovable(true)
-	bar:SetAlpha(s.inactivealpha)
 
 	bar.bg = bar:CreateTexture(nil, "BACKGROUND")
 	bar.bg:SetAllPoints(bar)
@@ -537,6 +570,8 @@ local function BuildBar()
 			visuals.y = floor(y - uy + 0.5)
 		end
 	end)
+
+	UpdateBarAlpha(false)
 
 	initialised = true
 end
@@ -855,7 +890,7 @@ local function Render()
 		end
 	end
 
-	bar:SetAlpha(anyActive and visuals.activealpha or visuals.inactivealpha)
+	UpdateBarAlpha(anyActive)
 end
 
 
