@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: Cooline
 ## Author: Seraphic8x2244
-## Notes: Cooline 1.9.7
-## Version: 1.9.7
+## Notes: Cooline 1.9.8
+## Version: 1.9.8
 ## SavedVariables: CoolineDB
 ## SavedVariablesPerCharacter: CoolineCharDB
 

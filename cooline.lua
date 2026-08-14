@@ -60,9 +60,10 @@ local bar = CreateFrame("Frame", "CoolineBar", UIParent)
 local cooldowns = {}
 local initialised = false
 local ToggleOptions
+local ApplyBarLockState
+local UpdateMinimapButton
 local pendingItemUse
 local itemCooldownLocks = {}
-local itemCooldownNames = {}
 local ITEM_INTENT_WINDOW = 1.0
 
 local function CapturePendingItem(name, texture)
@@ -95,6 +96,16 @@ local function InitialiseSettings()
 	CoolineDB = CoolineDB or {}
 	CoolineDB.visuals = CoolineDB.visuals or {}
 
+	if CoolineDB.showMinimapButton == nil then
+		CoolineDB.showMinimapButton = true
+	end
+	if CoolineDB.minimapX == nil then
+		CoolineDB.minimapX = -78
+	end
+	if CoolineDB.minimapY == nil then
+		CoolineDB.minimapY = 0
+	end
+
 	-- Migrate early 1.9.1 width/height settings to length/width.
 	if CoolineDB.visuals.length == nil and CoolineDB.visuals.height ~= nil then
 		if CoolineDB.visuals.vertical then
@@ -111,6 +122,10 @@ local function InitialiseSettings()
 	CoolineCharDB = CoolineCharDB or {}
 	if CoolineCharDB.useCharacterVisuals == nil then
 		CoolineCharDB.useCharacterVisuals = false
+	end
+
+	if CoolineCharDB.locked == nil then
+		CoolineCharDB.locked = false
 	end
 
 	CoolineCharDB.filters = CoolineCharDB.filters or {}
@@ -269,7 +284,7 @@ end
 
 local OriginalUseContainerItem = UseContainerItem
 if OriginalUseContainerItem then
-	UseContainerItem = function(bag, slot)
+	UseContainerItem = function(bag, slot, onSelf)
 		local link = GetContainerItemLink(bag, slot)
 		local name = SafeItemName(link)
 		local texture = GetContainerItemInfo(bag, slot)
@@ -278,7 +293,7 @@ if OriginalUseContainerItem then
 			CapturePendingItem(name, texture)
 		end
 
-		return OriginalUseContainerItem(bag, slot)
+		return OriginalUseContainerItem(bag, slot, onSelf)
 	end
 end
 
@@ -495,6 +510,136 @@ local function UpdateBarAlpha(active)
 	end
 end
 
+
+local minimapButton
+
+local function PositionMinimapButton()
+	if not minimapButton then
+		return
+	end
+
+	minimapButton:ClearAllPoints()
+	minimapButton:SetPoint(
+		"CENTER",
+		Minimap,
+		"CENTER",
+		CoolineDB.minimapX or -78,
+		CoolineDB.minimapY or 0
+	)
+end
+
+UpdateMinimapButton = function()
+	if not minimapButton then
+		return
+	end
+
+	if CoolineDB.showMinimapButton then
+		minimapButton:Show()
+	else
+		minimapButton:Hide()
+	end
+end
+
+ApplyBarLockState = function()
+	if not bar.clickOverlay then
+		return
+	end
+
+	if CoolineCharDB.locked then
+		bar.clickOverlay:Hide()
+		bar.clickOverlay:EnableMouse(false)
+	else
+		bar.clickOverlay:Show()
+		bar.clickOverlay:EnableMouse(true)
+	end
+
+	if optionsFrame and optionsFrame.lockBar then
+		optionsFrame.updating = true
+		optionsFrame.lockBar:SetChecked(CoolineCharDB.locked and 1 or nil)
+		optionsFrame.updating = false
+	end
+end
+
+local function BuildMinimapButton()
+	local icon
+	local border
+
+	if minimapButton then
+		return
+	end
+
+	minimapButton = CreateFrame("Button", "CoolineMinimapButton", Minimap)
+	minimapButton:SetWidth(31)
+	minimapButton:SetHeight(31)
+	minimapButton:SetFrameStrata("MEDIUM")
+	minimapButton:SetMovable(true)
+	minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	minimapButton:RegisterForDrag("LeftButton")
+
+	icon = minimapButton:CreateTexture(nil, "BACKGROUND")
+	icon:SetWidth(20)
+	icon:SetHeight(20)
+	icon:SetPoint("CENTER", minimapButton, "CENTER", 0, 0)
+	icon:SetTexture([[Interface\Icons\INV_Qiraj_JewelGlyphed]])
+	icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	minimapButton.icon = icon
+
+	border = minimapButton:CreateTexture(nil, "OVERLAY")
+	border:SetWidth(53)
+	border:SetHeight(53)
+	border:SetPoint("TOPLEFT", minimapButton, "TOPLEFT", 0, 0)
+	border:SetTexture([[Interface\Minimap\MiniMap-TrackingBorder]])
+	minimapButton.border = border
+
+	minimapButton:SetHighlightTexture(
+		[[Interface\Minimap\UI-Minimap-ZoomButton-Highlight]]
+	)
+
+	minimapButton:SetScript("OnClick", function()
+		if arg1 == "RightButton" then
+			CoolineCharDB.locked = not CoolineCharDB.locked
+			ApplyBarLockState()
+		else
+			ToggleOptions()
+		end
+	end)
+
+	minimapButton:SetScript("OnDragStart", function()
+		this:StartMoving()
+	end)
+
+	minimapButton:SetScript("OnDragStop", function()
+		local x, y
+		local mx, my
+
+		this:StopMovingOrSizing()
+
+		x, y = this:GetCenter()
+		mx, my = Minimap:GetCenter()
+
+		if x and y and mx and my then
+			CoolineDB.minimapX = floor((x - mx) + 0.5)
+			CoolineDB.minimapY = floor((y - my) + 0.5)
+		end
+	end)
+
+	minimapButton:SetScript("OnEnter", function()
+		GameTooltip:SetOwner(this, "ANCHOR_LEFT")
+		GameTooltip:AddLine("Cooline", 1, 0.82, 0)
+		GameTooltip:AddLine("Left-click: Options", 1, 1, 1)
+		GameTooltip:AddLine("Right-click: Lock / Unlock", 1, 1, 1)
+		GameTooltip:AddLine("Drag: Move button", 1, 1, 1)
+		GameTooltip:Show()
+	end)
+
+	minimapButton:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
+
+	PositionMinimapButton()
+	UpdateMinimapButton()
+end
+
 local function BuildBar()
 	local s = visuals
 	local labels = {
@@ -544,7 +689,7 @@ local function BuildBar()
 
 	bar.clickOverlay = CreateFrame("Button", nil, bar)
 	bar.clickOverlay:SetAllPoints(bar)
-	bar.clickOverlay:SetFrameLevel(bar.overlay and (bar.overlay:GetFrameLevel() + 1) or 30)
+	bar.clickOverlay:SetFrameLevel(30)
 	bar.clickOverlay:RegisterForDrag("LeftButton")
 
 	bar.clickOverlay:SetScript("OnMouseUp", function()
@@ -573,6 +718,7 @@ local function BuildBar()
 	end)
 
 	UpdateBarAlpha(false)
+	ApplyBarLockState()
 
 	initialised = true
 end
@@ -618,49 +764,8 @@ local function EnsureCooldown(key)
 	return cd
 end
 
-local function ReconcileAllCooldowns()
-	local spellCount = GetSpellCount()
-	local id
-	local name
-	local startTime, duration, enabled
-	local texture
-	local cd
-	local seen = {}
-	local now = GetTime()
-
-	for id = 1, spellCount do
-		name = GetSpellName(id, BOOKTYPE_SPELL)
-
-		if name then
-			startTime, duration, enabled = GetSpellCooldown(id, BOOKTYPE_SPELL)
-
-			if SpellAllowed(name) and enabled == 1 and duration and duration > 2.5 then
-				if (startTime + duration) > now then
-					cd = EnsureCooldown("spell:" .. name)
-					texture = GetSpellTexture(id, BOOKTYPE_SPELL)
-
-					cd.startTime = startTime
-					cd.duration = duration
-					cd.endTime = startTime + duration
-					cd.icon:SetTexture(texture)
-					cd:Show()
-					seen["spell:" .. name] = true
-				end
-			end
-		end
-	end
-
-	for name, cd in pairs(cooldowns) do
-		if not seen[name] and (not cd.endTime or cd.endTime <= now) then
-			cd:Hide()
-			cd.endTime = nil
-		end
-	end
-end
-
 local function ScanItems(seen)
 	local candidates = {}
-	local currentNames = {}
 	local now = GetTime()
 	local bag, slot, slots
 	local startTime, duration, enabled
@@ -687,7 +792,6 @@ local function ScanItems(seen)
 			signature = signature,
 		}
 
-		currentNames[itemName] = true
 	end
 
 	-- Bags.
@@ -731,7 +835,6 @@ local function ScanItems(seen)
 
 			if strupper(candidate.name) == strupper(pendingItemUse.name) then
 				itemCooldownLocks[candidate.signature] = pendingItemUse.name
-				itemCooldownNames[pendingItemUse.name] = candidate.signature
 
 				key = "item:" .. pendingItemUse.name
 				local cd = EnsureCooldown(key)
@@ -783,7 +886,6 @@ local function ScanItems(seen)
 
 		if not itemCooldownLocks[candidate.signature] then
 			itemCooldownLocks[candidate.signature] = candidate.name
-			itemCooldownNames[candidate.name] = candidate.signature
 
 			key = "item:" .. candidate.name
 			local cd = EnsureCooldown(key)
@@ -808,11 +910,30 @@ local function ScanItems(seen)
 	for signature, lockedName in pairs(itemCooldownLocks) do
 		if not activeSignatures[signature] then
 			itemCooldownLocks[signature] = nil
-			if itemCooldownNames[lockedName] == signature then
-				itemCooldownNames[lockedName] = nil
-			end
 		end
 	end
+end
+
+local function CooldownKeyAllowed(key)
+	local prefix
+	local name
+
+	if not key then
+		return false
+	end
+
+	prefix = string.sub(key, 1, 6)
+	if prefix == "spell:" then
+		name = string.sub(key, 7)
+		return SpellAllowed(name)
+	end
+
+	if string.sub(key, 1, 5) == "item:" then
+		name = string.sub(key, 6)
+		return ItemAllowed(name)
+	end
+
+	return true
 end
 
 local function ReconcileAllCooldowns()
@@ -855,9 +976,14 @@ local function ReconcileAllCooldowns()
 	ScanItems(seen)
 
 	for name, cd in pairs(cooldowns) do
-		if not seen[name] and (not cd.endTime or cd.endTime <= now) then
+		if not CooldownKeyAllowed(name) then
 			cd:Hide()
 			cd.endTime = nil
+			cd.pulseStart = nil
+		elseif not seen[name] and (not cd.endTime or cd.endTime <= now) then
+			cd:Hide()
+			cd.endTime = nil
+			cd.pulseStart = nil
 		end
 	end
 end
@@ -1178,6 +1304,30 @@ local function MakeStylePreview(parent, styleKey, x, y)
 end
 
 
+
+local function MakeRowValueSlider(parent, x, y, width, low, high, step)
+	local slider
+	local name
+
+	sliderCount = sliderCount + 1
+	name = "CoolineRowValueSlider" .. sliderCount
+
+	slider = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
+	slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+	slider:SetWidth(width)
+	slider:SetHeight(16)
+	slider:SetMinMaxValues(low, high)
+	slider:SetValueStep(step)
+
+	getglobal(name .. "Text"):SetText("")
+	getglobal(name .. "Low"):SetText(tostring(low))
+	getglobal(name .. "High"):SetText(tostring(high))
+
+	slider.edit = MakeEditBox(parent, x + width + 12, y - 3, 58)
+
+	return slider
+end
+
 local function ReadInteger(edit, minimum)
 	local value = tonumber(edit:GetText())
 	if not value then
@@ -1198,6 +1348,8 @@ RefreshAppearanceOptions = function()
 	optionsFrame.updating = true
 
 	optionsFrame.scope:SetValue(CoolineCharDB.useCharacterVisuals and 1 or 0)
+	optionsFrame.lockBar:SetChecked(CoolineCharDB.locked and 1 or nil)
+	optionsFrame.minimapToggle:SetChecked(CoolineDB.showMinimapButton and 1 or nil)
 	optionsFrame.direction:SetValue(visuals.vertical and 1 or 0)
 	optionsFrame.iconDirection:SetValue(visuals.reverse and 1 or 0)
 
@@ -1644,7 +1796,7 @@ local function BuildOptions()
 
 	optionsFrame = CreateFrame("Frame", "CoolineOptionsFrame", UIParent)
 	optionsFrame:SetWidth(540)
-	optionsFrame:SetHeight(690)
+	optionsFrame:SetHeight(760)
 	optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 20)
 	optionsFrame:SetFrameStrata("DIALOG")
 	optionsFrame:SetMovable(true)
@@ -1664,8 +1816,23 @@ local function BuildOptions()
 
 	tinsert(UISpecialFrames, "CoolineOptionsFrame")
 
-	MakeText(optionsFrame, "Cooline", 18, -16, 14, true)
-	MakeText(optionsFrame, "v" .. VERSION, 75, -18, 10, false)
+	local headerIcon = optionsFrame:CreateTexture(nil, "ARTWORK")
+	headerIcon:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 18, -13)
+	headerIcon:SetWidth(24)
+	headerIcon:SetHeight(24)
+	headerIcon:SetTexture([[Interface\Icons\INV_Qiraj_JewelGlyphed]])
+	headerIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+	MakeText(optionsFrame, "Cooline", 50, -16, 14, true)
+	MakeText(optionsFrame, "v" .. VERSION, 107, -18, 10, false)
+
+	optionsFrame.lockBar = MakeCheckbox(optionsFrame, "Lock Bar", 245, -12)
+	optionsFrame.minimapToggle = MakeCheckbox(
+		optionsFrame,
+		"Minimap Button",
+		345,
+		-12
+	)
 
 	close = MakeButton(optionsFrame, "X", 24)
 	close:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -12, -11)
@@ -1700,7 +1867,6 @@ local function BuildOptions()
 	page:SetAllPoints(panel)
 	optionsFrame.appearancePage = page
 
-	-- Header row.
 	MakeText(page, "Appearance", 18, -18, 14, true)
 	optionsFrame.scope = MakeBinarySlider(page, "Account Wide", "Per Character", 360, -20, 42)
 
@@ -1711,29 +1877,51 @@ local function BuildOptions()
 	optionsFrame.styleButtons.dark = MakeStylePreview(page, "dark", 254, -72)
 	optionsFrame.styleButtons.borderless = MakeStylePreview(page, "borderless", 371, -72)
 
-	-- Upper control grid: all three rows share the same slider column and width.
 	MakeText(page, "Animate on Cooldown", 28, -145, 11, false)
-	optionsFrame.cooldownAnimate = MakeValueSlider(page, "", 244, -137, 170, 100, 200, 10)
+	optionsFrame.cooldownAnimate = MakeRowValueSlider(
+		page, 244, -145, 170, 100, 200, 10
+	)
 
 	MakeText(page, "Layout", 18, -194, 12, true)
 
 	MakeText(page, "Bar Direction", 28, -229, 11, false)
-	optionsFrame.direction = MakeBinarySlider(page, "Horizontal", "Vertical", 244, -226, 170)
+	optionsFrame.direction = MakeBinarySlider(
+		page, "Horizontal", "Vertical", 244, -226, 170
+	)
 
 	MakeText(page, "Icon Direction", 28, -271, 11, false)
-	optionsFrame.iconDirection = MakeBinarySlider(page, "Ascending", "Descending", 244, -268, 170)
+	optionsFrame.iconDirection = MakeBinarySlider(
+		page, "Ascending", "Descending", 244, -268, 170
+	)
 
-	-- Exact 50:50 lower columns.
 	MakeText(page, "Sizes", 18, -316, 12, true)
-	MakeText(page, "Opacity", 264, -316, 12, true)
 
-	optionsFrame.length = MakeValueSlider(page, "Bar Length", 28, -346, 150, 100, 1000, 10)
-	optionsFrame.active = MakeValueSlider(page, "Bar Active", 274, -346, 150, 0, 100, 10)
+	MakeText(page, "Bar Length", 28, -351, 11, false)
+	optionsFrame.length = MakeRowValueSlider(
+		page, 244, -351, 170, 100, 1000, 10
+	)
 
-	optionsFrame.width = MakeValueSlider(page, "Bar Width", 28, -414, 150, 2, 100, 2)
-	optionsFrame.inactive = MakeValueSlider(page, "Bar Inactive", 274, -414, 150, 0, 100, 10)
+	MakeText(page, "Bar Width", 28, -393, 11, false)
+	optionsFrame.width = MakeRowValueSlider(
+		page, 244, -393, 170, 2, 100, 2
+	)
 
-	optionsFrame.oversize = MakeValueSlider(page, "Icon Oversize", 28, -482, 150, -50, 50, 2)
+	MakeText(page, "Icon Oversize", 28, -435, 11, false)
+	optionsFrame.oversize = MakeRowValueSlider(
+		page, 244, -435, 170, -50, 50, 2
+	)
+
+	MakeText(page, "Opacity", 18, -480, 12, true)
+
+	MakeText(page, "Bar Active", 28, -515, 11, false)
+	optionsFrame.active = MakeRowValueSlider(
+		page, 244, -515, 170, 0, 100, 10
+	)
+
+	MakeText(page, "Bar Inactive", 28, -557, 11, false)
+	optionsFrame.inactive = MakeRowValueSlider(
+		page, 244, -557, 170, 0, 100, 10
+	)
 
 	-- Spells page
 	spells = CreateFrame("Frame", nil, panel)
@@ -1871,6 +2059,20 @@ local function BuildOptions()
 
 	addButton:SetScript("OnClick", function()
 		AddSpellFromBox()
+	end)
+
+	optionsFrame.lockBar:SetScript("OnClick", function()
+		if optionsFrame.updating then return end
+
+		CoolineCharDB.locked = this:GetChecked() and true or false
+		ApplyBarLockState()
+	end)
+
+	optionsFrame.minimapToggle:SetScript("OnClick", function()
+		if optionsFrame.updating then return end
+
+		CoolineDB.showMinimapButton = this:GetChecked() and true or false
+		UpdateMinimapButton()
 	end)
 
 	appearanceTab:SetScript("OnClick", function()
@@ -2323,6 +2525,7 @@ local function OnVariablesLoaded()
 	InitialiseSettings()
 	BuildBar()
 	BuildOptions()
+	BuildMinimapButton()
 	ReconcileAllCooldowns()
 
 	bar:RegisterEvent("SPELL_UPDATE_COOLDOWN")
