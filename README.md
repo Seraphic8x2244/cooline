@@ -1,4 +1,4 @@
-# Cooline 1.9.7
+# Cooline 1.9.8
 
 A lightweight cooldown timeline addon for **World of Warcraft 1.12.1**, based on the original [Cooline by shirsig](https://github.com/shirsig/cooline).
 
@@ -15,6 +15,8 @@ This fork intends to keep the genuinely excellent base behaviour, but has been c
 - Horizontal and vertical layouts fixed
 - Configurable bar, icon and opacity settings
 - Per-character spell and item filtering - Blacklist and whitelist support
+- Minimap button to access options
+- Bar lockable
 - Right-click the Cooline bar to open options - Alt-click to reposition
 - A few basic skins to start with
 - Configurable animation when casting spell on cooldown
