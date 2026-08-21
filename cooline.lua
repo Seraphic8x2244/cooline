@@ -1,5 +1,3 @@
--- Cooline 1.9.5
-
 local VERSION = GetAddOnMetadata("Cooline", "Version") or "Unknown"
 
 local DEFAULTS = {
@@ -1305,6 +1303,36 @@ end
 
 
 
+
+local function MakeListScrollbar(parent, name)
+	local scroll = CreateFrame("Slider", name, parent)
+
+	scroll:SetOrientation("VERTICAL")
+	scroll:SetWidth(16)
+
+	scroll:SetBackdrop({
+		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
+		edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
+		tile = true,
+		tileSize = 8,
+		edgeSize = 8,
+		insets = { left = 2, right = 2, top = 2, bottom = 2 },
+	})
+	scroll:SetBackdropColor(0, 0, 0, 0.55)
+	scroll:SetBackdropBorderColor(0.30, 0.36, 0.43, 1)
+
+	scroll:SetThumbTexture([[Interface\Buttons\UI-SliderBar-Button-Vertical]])
+
+	local thumb = scroll:GetThumbTexture()
+	if thumb then
+		thumb:SetWidth(16)
+		thumb:SetHeight(16)
+	end
+
+
+	return scroll
+end
+
 local function MakeRowValueSlider(parent, x, y, width, low, high, step)
 	local slider
 	local name
@@ -2052,9 +2080,9 @@ local function BuildOptions()
 		optionsFrame.spellRows[i] = row
 	end
 
-	scroll = CreateFrame("Slider", "CoolineSpellScrollBar", listFrame, "UIPanelScrollBarTemplate")
-	scroll:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -2, -18)
-	scroll:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", -2, 18)
+	scroll = MakeListScrollbar(listFrame, "CoolineSpellScrollBar")
+	scroll:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -2, -6)
+	scroll:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", -2, 6)
 	scroll:SetMinMaxValues(0, 0)
 	scroll:SetValueStep(1)
 	scroll:SetValue(0)
@@ -2218,12 +2246,9 @@ local function BuildOptions()
 		optionsFrame.itemRows[i] = row
 	end
 
-	local itemScroll = CreateFrame("Slider", "CoolineItemScrollBar", itemListFrame, "UIPanelScrollBarTemplate")
-	itemScroll:SetPoint("TOPRIGHT", itemListFrame, "TOPRIGHT", -2, -18)
-	itemScroll:SetPoint("BOTTOMRIGHT", itemListFrame, "BOTTOMRIGHT", -2, 18)
-	itemScroll:SetMinMaxValues(0, 0)
-	itemScroll:SetValueStep(1)
-	itemScroll:SetValue(0)
+	local itemScroll = MakeListScrollbar(itemListFrame, "CoolineItemScrollBar")
+	itemScroll:SetPoint("TOPRIGHT", itemListFrame, "TOPRIGHT", -2, -6)
+	itemScroll:SetPoint("BOTTOMRIGHT", itemListFrame, "BOTTOMRIGHT", -2, 6)
 	itemScroll:Hide()
 	optionsFrame.itemScroll = itemScroll
 	optionsFrame.itemOffset = 0
