@@ -2606,9 +2606,12 @@ bar:SetScript("OnEvent", function()
 	if event == "VARIABLES_LOADED" then
 		OnVariablesLoaded()
 	elseif event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" and initialised then
+		-- Vanilla uses different verbs for different abilities, e.g.
+		-- "cast Blessing of Freedom" and "perform Shadowmeld".
+		-- Match the common failure structure rather than hard-coding the verb.
 		local _, _, failedSpell = strfind(
 			arg1 or "",
-			"^You fail to cast (.+): Not yet recovered%.$"
+			"^You fail to [^ ]+ (.+): Not yet recovered%.$"
 		)
 
 		if failedSpell then
