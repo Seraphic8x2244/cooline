@@ -61,6 +61,9 @@ local ToggleOptions
 local ApplyBarLockState
 local UpdateMinimapButton
 local optionsFrame
+local pfUISkinRegistered = false
+local pfUISkinEnabled = false
+local pfUIOptionsSkinned = false
 local pendingItemUse
 local itemCooldownLocks = {}
 local ITEM_INTENT_WINDOW = 1.0
@@ -317,10 +320,62 @@ local function GetStylePreset()
 	return STYLE_PRESETS[visuals.style] or STYLE_PRESETS.classic
 end
 
+local function GetPfUIColor(setting, fallbackR, fallbackG, fallbackB, fallbackA)
+	if pfUI and pfUI.api and pfUI.api.GetStringColor and setting then
+		local r, g, b, a = pfUI.api.GetStringColor(setting)
+		return tonumber(r) or fallbackR,
+		       tonumber(g) or fallbackG,
+		       tonumber(b) or fallbackB,
+		       tonumber(a) or fallbackA
+	end
+
+	return fallbackR, fallbackG, fallbackB, fallbackA
+end
+
+local function PfUIClassicAvailable()
+	return pfUISkinEnabled and
+	       visuals and visuals.style == "classic" and
+	       pfUI and pfUI.api and
+	       pfUI_config and pfUI_config.appearance and
+	       pfUI_config.appearance.border
+end
+
 local function ApplyBarStyle()
 	local style
 
 	if not bar.bg or not bar.border then
+		return
+	end
+
+	-- A registered/enabled pfUI skin owns the Classic presentation only.
+	-- Explicit Cooline styles remain untouched.
+	if PfUIClassicAvailable() then
+		local borderConfig = pfUI_config.appearance.border
+		local br, bg, bb = GetPfUIColor(
+			borderConfig.background, 0.08, 0.08, 0.08, 1
+		)
+		local er, eg, eb = GetPfUIColor(
+			borderConfig.color, 0.35, 0.35, 0.35, 1
+		)
+		local edgeSize = 1
+
+		if pfUI.api.GetBorderSize then
+			local _, scaled = pfUI.api.GetBorderSize()
+			edgeSize = tonumber(scaled) or 1
+		end
+
+		bar.bg:SetTexture([[Interface\Buttons\WHITE8X8]])
+		bar.bg:SetVertexColor(br, bg, bb, 1)
+
+		bar.border:ClearAllPoints()
+		bar.border:SetPoint("TOPLEFT", bar, "TOPLEFT", -edgeSize, edgeSize)
+		bar.border:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", edgeSize, -edgeSize)
+		bar.border:SetBackdrop({
+			edgeFile = [[Interface\Buttons\WHITE8X8]],
+			edgeSize = edgeSize,
+			insets = { left = 0, right = 0, top = 0, bottom = 0 },
+		})
+		bar.border:SetBackdropBorderColor(er, eg, eb, 1)
 		return
 	end
 
@@ -1828,12 +1883,12 @@ local function BuildOptionsShell()
 
 	tinsert(UISpecialFrames, "CoolineOptionsFrame")
 
-	local headerIcon = optionsFrame:CreateTexture(nil, "ARTWORK")
-	headerIcon:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 18, -13)
-	headerIcon:SetWidth(24)
-	headerIcon:SetHeight(24)
-	headerIcon:SetTexture([[Interface\Icons\INV_Qiraj_JewelGlyphed]])
-	headerIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	optionsFrame.headerIcon = optionsFrame:CreateTexture(nil, "ARTWORK")
+	optionsFrame.headerIcon:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 18, -13)
+	optionsFrame.headerIcon:SetWidth(24)
+	optionsFrame.headerIcon:SetHeight(24)
+	optionsFrame.headerIcon:SetTexture([[Interface\Icons\INV_Qiraj_JewelGlyphed]])
+	optionsFrame.headerIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
 	MakeText(optionsFrame, "Cooline", 50, -16, 14, true)
 	MakeText(optionsFrame, "v" .. VERSION, 107, -18, 10, false)
@@ -1959,12 +2014,13 @@ local function BuildSpellsPage()
 	optionsFrame.spellAdd:SetJustifyH("LEFT")
 	optionsFrame.spellAdd:SetTextInsets(6, 6, 0, 0)
 
-	local addButton = MakeButton(spells, "Add", 70)
-	addButton:SetPoint("TOPLEFT", spells, "TOPLEFT", 372, -271)
+	optionsFrame.spellAddButton = MakeButton(spells, "Add", 70)
+	optionsFrame.spellAddButton:SetPoint("TOPLEFT", spells, "TOPLEFT", 372, -271)
 
 	MakeText(spells, "Filtered Spells", 18, -316, 12, true)
 
-	local listFrame = CreateFrame("Frame", nil, spells)
+	optionsFrame.spellListFrame = CreateFrame("Frame", nil, spells)
+	local listFrame = optionsFrame.spellListFrame
 	listFrame:SetPoint("TOPLEFT", spells, "TOPLEFT", 28, -344)
 	listFrame:SetWidth(440)
 	listFrame:SetHeight(FILTER_ROW_HEIGHT * SPELL_VISIBLE_ROWS)
@@ -2071,7 +2127,7 @@ local function BuildSpellsPage()
 		this:ClearFocus()
 	end)
 
-	addButton:SetScript("OnClick", function()
+	optionsFrame.spellAddButton:SetScript("OnClick", function()
 		AddSpellFromBox()
 	end)
 
@@ -2128,12 +2184,13 @@ local function BuildItemsPage()
 	optionsFrame.itemAdd:SetJustifyH("LEFT")
 	optionsFrame.itemAdd:SetTextInsets(6, 6, 0, 0)
 
-	local itemAddButton = MakeButton(items, "Add", 70)
-	itemAddButton:SetPoint("TOPLEFT", items, "TOPLEFT", 372, -271)
+	optionsFrame.itemAddButton = MakeButton(items, "Add", 70)
+	optionsFrame.itemAddButton:SetPoint("TOPLEFT", items, "TOPLEFT", 372, -271)
 
 	MakeText(items, "Filtered Items", 18, -316, 12, true)
 
-	local itemListFrame = CreateFrame("Frame", nil, items)
+	optionsFrame.itemListFrame = CreateFrame("Frame", nil, items)
+	local itemListFrame = optionsFrame.itemListFrame
 	itemListFrame:SetPoint("TOPLEFT", items, "TOPLEFT", 28, -344)
 	itemListFrame:SetWidth(440)
 	itemListFrame:SetHeight(FILTER_ROW_HEIGHT * ITEM_VISIBLE_ROWS)
@@ -2235,7 +2292,7 @@ local function BuildItemsPage()
 		this:ClearFocus()
 	end)
 
-	itemAddButton:SetScript("OnClick", function()
+	optionsFrame.itemAddButton:SetScript("OnClick", function()
 		AddItemFromBox()
 	end)
 
@@ -2518,6 +2575,165 @@ local function BindAppearanceScripts()
 	end
 end
 
+
+local function ApplyPfUIOptionsSkin()
+	local api
+	local i
+	local sliders
+	local edits
+	local frames
+
+	if pfUIOptionsSkinned or not optionsFrame then
+		return
+	end
+
+	if not pfUI or not pfUI.api then
+		return
+	end
+
+	api = pfUI.api
+
+	-- Capability-based: every cosmetic operation is optional so forks with a
+	-- reduced helper set still get as much of the skin as they support.
+	if api.CreateBackdrop then
+		frames = {
+			optionsFrame,
+			optionsFrame.panel,
+			optionsFrame.appearanceTab,
+			optionsFrame.spellsTab,
+			optionsFrame.itemsTab,
+			optionsFrame.spellListFrame,
+			optionsFrame.itemListFrame,
+		}
+
+		for i = 1, table.getn(frames) do
+			if frames[i] then
+				api.CreateBackdrop(frames[i], nil, true)
+			end
+		end
+	end
+
+	if api.SkinButton then
+		if optionsFrame.closeButton then api.SkinButton(optionsFrame.closeButton) end
+		if optionsFrame.spellAddButton then api.SkinButton(optionsFrame.spellAddButton) end
+		if optionsFrame.itemAddButton then api.SkinButton(optionsFrame.itemAddButton) end
+
+		if optionsFrame.spellRows then
+			for i = 1, table.getn(optionsFrame.spellRows) do
+				if optionsFrame.spellRows[i] and optionsFrame.spellRows[i].remove then
+					api.SkinButton(optionsFrame.spellRows[i].remove)
+				end
+			end
+		end
+
+		if optionsFrame.itemRows then
+			for i = 1, table.getn(optionsFrame.itemRows) do
+				if optionsFrame.itemRows[i] and optionsFrame.itemRows[i].remove then
+					api.SkinButton(optionsFrame.itemRows[i].remove)
+				end
+			end
+		end
+	end
+
+	if api.SkinCheckbox then
+		if optionsFrame.lockBar then api.SkinCheckbox(optionsFrame.lockBar) end
+		if optionsFrame.minimapToggle then api.SkinCheckbox(optionsFrame.minimapToggle) end
+		if optionsFrame.spellIconOverrideCheck then
+			api.SkinCheckbox(optionsFrame.spellIconOverrideCheck)
+		end
+		if optionsFrame.itemIconOverrideCheck then
+			api.SkinCheckbox(optionsFrame.itemIconOverrideCheck)
+		end
+	end
+
+	if api.SkinSlider then
+		sliders = {
+			optionsFrame.scope,
+			optionsFrame.cooldownAnimate,
+			optionsFrame.direction,
+			optionsFrame.iconDirection,
+			optionsFrame.length,
+			optionsFrame.width,
+			optionsFrame.oversize,
+			optionsFrame.active,
+			optionsFrame.inactive,
+			optionsFrame.spellOversize,
+			optionsFrame.filterType,
+			optionsFrame.itemOversize,
+			optionsFrame.itemFilterType,
+			optionsFrame.spellScroll,
+			optionsFrame.itemScroll,
+		}
+
+		for i = 1, table.getn(sliders) do
+			if sliders[i] then
+				api.SkinSlider(sliders[i])
+			end
+		end
+	end
+
+	if api.CreateBackdrop then
+		edits = {
+			optionsFrame.spellAdd,
+			optionsFrame.itemAdd,
+			optionsFrame.cooldownAnimate and optionsFrame.cooldownAnimate.edit,
+			optionsFrame.length and optionsFrame.length.edit,
+			optionsFrame.width and optionsFrame.width.edit,
+			optionsFrame.oversize and optionsFrame.oversize.edit,
+			optionsFrame.active and optionsFrame.active.edit,
+			optionsFrame.inactive and optionsFrame.inactive.edit,
+			optionsFrame.spellOversize and optionsFrame.spellOversize.edit,
+			optionsFrame.itemOversize and optionsFrame.itemOversize.edit,
+		}
+
+		for i = 1, table.getn(edits) do
+			if edits[i] then
+				api.CreateBackdrop(edits[i], nil, true)
+			end
+		end
+	end
+
+	if api.HandleIcon and optionsFrame.headerIcon then
+		-- Header icon is already cropped in Cooline; keep its geometry and only
+		-- retain the common pfUI crop convention.
+		optionsFrame.headerIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	end
+
+	pfUIOptionsSkinned = true
+end
+
+local function EnablePfUISkin()
+	-- Honour pfUI's own per-skin disable setting even when Cooline registers
+	-- after pfUI has completed boot.
+	if pfUI_config and pfUI_config.disabled and
+	   pfUI_config.disabled["skin_cooline"] == "1" then
+		return
+	end
+
+	pfUISkinEnabled = true
+	ApplyPfUIOptionsSkin()
+	ApplyVisualLayout()
+end
+
+local function TryRegisterPfUISkin()
+	if pfUISkinRegistered then
+		return
+	end
+
+	if not pfUI or type(pfUI.RegisterSkin) ~= "function" or not pfUI.api then
+		return
+	end
+
+	pfUISkinRegistered = true
+
+	-- Register as a genuine pfUI skin so it appears in pfUI's skin controls.
+	-- The callback keeps Cooline independent: pfUI only owns presentation.
+	pfUI:RegisterSkin("cooline", "vanilla", function()
+		EnablePfUISkin()
+	end)
+end
+
+
 local function BuildOptions()
 	if optionsFrame then return end
 
@@ -2551,6 +2767,7 @@ local function OnVariablesLoaded()
 	BuildBar()
 	BuildOptions()
 	BuildMinimapButton()
+	TryRegisterPfUISkin()
 	ReconcileAllCooldowns()
 
 	bar:RegisterEvent("SPELL_UPDATE_COOLDOWN")
@@ -2567,10 +2784,13 @@ local function OnVariablesLoaded()
 end
 
 bar:RegisterEvent("VARIABLES_LOADED")
+bar:RegisterEvent("ADDON_LOADED")
 
 bar:SetScript("OnEvent", function()
 	if event == "VARIABLES_LOADED" then
 		OnVariablesLoaded()
+	elseif event == "ADDON_LOADED" then
+		TryRegisterPfUISkin()
 	elseif event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" and initialised then
 		-- Vanilla uses different verbs for different abilities, e.g.
 		-- "cast Blessing of Freedom" and "perform Shadowmeld".
