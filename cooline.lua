@@ -60,6 +60,7 @@ local initialised = false
 local ToggleOptions
 local ApplyBarLockState
 local UpdateMinimapButton
+local optionsFrame
 local pendingItemUse
 local itemCooldownLocks = {}
 local ITEM_INTENT_WINDOW = 1.0
@@ -198,7 +199,7 @@ local function Trim(text)
 	return text
 end
 
-local function ListContainsSpell(list, name)
+local function ListContainsName(list, name)
 	local i, entry
 
 	if not list or not name then return false end
@@ -216,10 +217,10 @@ local function SpellAllowed(name)
 	local filters = CoolineCharDB.filters
 
 	if filters.mode == "whitelist" then
-		return ListContainsSpell(filters.whitelist, name)
+		return ListContainsName(filters.whitelist, name)
 	end
 
-	return not ListContainsSpell(filters.blacklist, name)
+	return not ListContainsName(filters.blacklist, name)
 end
 
 local function GetActiveFilterList()
@@ -255,10 +256,10 @@ local function ItemAllowed(name)
 	local filters = CoolineCharDB.itemFilters
 
 	if filters.mode == "whitelist" then
-		return ListContainsSpell(filters.whitelist, name)
+		return ListContainsName(filters.whitelist, name)
 	end
 
-	return not ListContainsSpell(filters.blacklist, name)
+	return not ListContainsName(filters.blacklist, name)
 end
 
 local function GetActiveItemFilterList()
@@ -1094,10 +1095,9 @@ end
 -- Options
 -- ============================================================================
 
-local optionsFrame
 local RefreshAppearanceOptions
 local sliderCount = 0
-local SPELL_ROW_HEIGHT = 28
+local FILTER_ROW_HEIGHT = 28
 local SPELL_VISIBLE_ROWS = 7
 local ITEM_VISIBLE_ROWS = 7
 
@@ -1507,7 +1507,7 @@ local function FindSpellRowByName(name)
 	return nil
 end
 
-local function FlashSpellRow(row)
+local function FlashFilterRow(row)
 	if not row then return end
 
 	row.flashTime = 0.55
@@ -1605,7 +1605,7 @@ local function AddSpellFromBox()
 
 	if existing then
 		RefreshSpellRows()
-		FlashSpellRow(FindSpellRowByName(typed))
+		FlashFilterRow(FindSpellRowByName(typed))
 		optionsFrame.spellAdd:SetText("")
 		return
 	end
@@ -1622,7 +1622,7 @@ local function AddSpellFromBox()
 	end
 
 	RefreshSpellRows()
-	FlashSpellRow(FindSpellRowByName(storedName))
+	FlashFilterRow(FindSpellRowByName(storedName))
 
 	-- Reconcile immediately so filter changes take effect now.
 	ReconcileAllCooldowns()
@@ -1714,7 +1714,7 @@ local function AddItemFromBox()
 	for i = 1, table.getn(list) do
 		if strupper(list[i]) == strupper(typed) then
 			RefreshItemRows()
-			FlashSpellRow(FindItemRowByName(typed))
+			FlashFilterRow(FindItemRowByName(typed))
 			optionsFrame.itemAdd:SetText("")
 			return
 		end
@@ -1731,7 +1731,7 @@ local function AddItemFromBox()
 	end
 
 	RefreshItemRows()
-	FlashSpellRow(FindItemRowByName(storedName))
+	FlashFilterRow(FindItemRowByName(storedName))
 	ReconcileAllCooldowns()
 end
 
@@ -1804,57 +1804,7 @@ local function SelectOptionsTab(selected)
 	end
 end
 
-local OptionsDeps = {
-	VERSION = VERSION,
-	ApplyBarLockState = ApplyBarLockState,
-	UpdateMinimapButton = UpdateMinimapButton,
-	SelectVisualScope = SelectVisualScope,
-	ApplyVisualLayout = ApplyVisualLayout,
-	ReconcileAllCooldowns = ReconcileAllCooldowns,
-	RefreshAppearanceOptions = RefreshAppearanceOptions,
-	SPELL_ROW_HEIGHT = SPELL_ROW_HEIGHT,
-	SPELL_VISIBLE_ROWS = SPELL_VISIBLE_ROWS,
-	ITEM_VISIBLE_ROWS = ITEM_VISIBLE_ROWS,
-	MakeText = MakeText,
-	MakeButton = MakeButton,
-	MakeBinarySlider = MakeBinarySlider,
-	MakeCheckbox = MakeCheckbox,
-	MakeEditBox = MakeEditBox,
-	MakeValueSlider = MakeValueSlider,
-	SetValueControlDimmed = SetValueControlDimmed,
-	MakeStylePreview = MakeStylePreview,
-	MakeRowValueSlider = MakeRowValueSlider,
-	ReadInteger = ReadInteger,
-	RefreshSpellIconOptions = RefreshSpellIconOptions,
-	RefreshItemIconOptions = RefreshItemIconOptions,
-	RemoveSpellAtIndex = RemoveSpellAtIndex,
-	RefreshSpellRows = RefreshSpellRows,
-	AddSpellFromBox = AddSpellFromBox,
-	RefreshItemRows = RefreshItemRows,
-	RemoveItemAtIndex = RemoveItemAtIndex,
-	AddItemFromBox = AddItemFromBox,
-	ShowOptionsPage = ShowOptionsPage,
-	MakeTab = MakeTab,
-	SelectOptionsTab = SelectOptionsTab,
-}
-
-local function BuildOptions()
-	local close
-	local panel
-	local appearanceTab
-	local spellsTab
-	local itemsTab
-	local page
-	local spells
-	local items
-	local addButton
-	local itemAddButton
-	local listFrame
-	local scroll
-	local i
-	local row
-
-	if optionsFrame then return end
+local function BuildOptionsShell()
 
 	optionsFrame = CreateFrame("Frame", "CoolineOptionsFrame", UIParent)
 	optionsFrame:SetWidth(540)
@@ -1885,140 +1835,139 @@ local function BuildOptions()
 	headerIcon:SetTexture([[Interface\Icons\INV_Qiraj_JewelGlyphed]])
 	headerIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-	OptionsDeps.MakeText(optionsFrame, "Cooline", 50, -16, 14, true)
-	OptionsDeps.MakeText(optionsFrame, "v" .. OptionsDeps.VERSION, 107, -18, 10, false)
+	MakeText(optionsFrame, "Cooline", 50, -16, 14, true)
+	MakeText(optionsFrame, "v" .. VERSION, 107, -18, 10, false)
 
-	optionsFrame.lockBar = OptionsDeps.MakeCheckbox(optionsFrame, "Lock Bar", 245, -12)
-	optionsFrame.minimapToggle = OptionsDeps.MakeCheckbox(
+	optionsFrame.lockBar = MakeCheckbox(optionsFrame, "Lock Bar", 245, -12)
+	optionsFrame.minimapToggle = MakeCheckbox(
 		optionsFrame,
 		"Minimap Button",
 		345,
 		-12
 	)
 
-	close = OptionsDeps.MakeButton(optionsFrame, "X", 24)
-	close:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -12, -11)
-	close:SetScript("OnClick", function() optionsFrame:Hide() end)
+	optionsFrame.closeButton = MakeButton(optionsFrame, "X", 24)
+	optionsFrame.closeButton:SetPoint("TOPRIGHT", optionsFrame, "TOPRIGHT", -12, -11)
+	optionsFrame.closeButton:SetScript("OnClick", function() optionsFrame:Hide() end)
 
-	appearanceTab = OptionsDeps.MakeTab(optionsFrame, "Appearance", 112)
-	appearanceTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 26, -50)
-	optionsFrame.appearanceTab = appearanceTab
+	optionsFrame.appearanceTab = MakeTab(optionsFrame, "Appearance", 112)
+	optionsFrame.appearanceTab:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 26, -50)
 
-	spellsTab = OptionsDeps.MakeTab(optionsFrame, "Spells", 90)
-	spellsTab:SetPoint("LEFT", appearanceTab, "RIGHT", 4, 0)
-	optionsFrame.spellsTab = spellsTab
+	optionsFrame.spellsTab = MakeTab(optionsFrame, "Spells", 90)
+	optionsFrame.spellsTab:SetPoint("LEFT", optionsFrame.appearanceTab, "RIGHT", 4, 0)
 
-	itemsTab = OptionsDeps.MakeTab(optionsFrame, "Items", 90)
-	itemsTab:SetPoint("LEFT", spellsTab, "RIGHT", 4, 0)
-	optionsFrame.itemsTab = itemsTab
+	optionsFrame.itemsTab = MakeTab(optionsFrame, "Items", 90)
+	optionsFrame.itemsTab:SetPoint("LEFT", optionsFrame.spellsTab, "RIGHT", 4, 0)
 
-	panel = CreateFrame("Frame", nil, optionsFrame)
-	panel:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 16, -72)
-	panel:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -16, 16)
-	panel:SetBackdrop({
+	optionsFrame.panel = CreateFrame("Frame", nil, optionsFrame)
+	optionsFrame.panel:SetPoint("TOPLEFT", optionsFrame, "TOPLEFT", 16, -72)
+	optionsFrame.panel:SetPoint("BOTTOMRIGHT", optionsFrame, "BOTTOMRIGHT", -16, 16)
+	optionsFrame.panel:SetBackdrop({
 		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
 		edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
 		tile = true, tileSize = 16, edgeSize = 12,
 		insets = { left = 3, right = 3, top = 3, bottom = 3 },
 	})
-	panel:SetBackdropColor(0.04, 0.05, 0.07, 0.88)
-	panel:SetBackdropBorderColor(0.30, 0.36, 0.43, 1)
+	optionsFrame.panel:SetBackdropColor(0.04, 0.05, 0.07, 0.88)
+	optionsFrame.panel:SetBackdropBorderColor(0.30, 0.36, 0.43, 1)
+end
 
-	-- Appearance page
-	page = CreateFrame("Frame", nil, panel)
-	page:SetAllPoints(panel)
+local function BuildAppearancePage()
+	local page = CreateFrame("Frame", nil, optionsFrame.panel)
+	page:SetAllPoints(optionsFrame.panel)
 	optionsFrame.appearancePage = page
 
-	OptionsDeps.MakeText(page, "Appearance", 18, -18, 14, true)
-	optionsFrame.scope = OptionsDeps.MakeBinarySlider(page, "Account Wide", "Per Character", 360, -20, 42)
+	MakeText(page, "Appearance", 18, -18, 14, true)
+	optionsFrame.scope = MakeBinarySlider(page, "Account Wide", "Per Character", 360, -20, 42)
 
-	OptionsDeps.MakeText(page, "Style", 18, -50, 12, true)
+	MakeText(page, "Style", 18, -50, 12, true)
 	optionsFrame.styleButtons = {}
-	optionsFrame.styleButtons.classic = OptionsDeps.MakeStylePreview(page, "classic", 20, -72)
-	optionsFrame.styleButtons.flat = OptionsDeps.MakeStylePreview(page, "flat", 137, -72)
-	optionsFrame.styleButtons.dark = OptionsDeps.MakeStylePreview(page, "dark", 254, -72)
-	optionsFrame.styleButtons.borderless = OptionsDeps.MakeStylePreview(page, "borderless", 371, -72)
+	optionsFrame.styleButtons.classic = MakeStylePreview(page, "classic", 20, -72)
+	optionsFrame.styleButtons.flat = MakeStylePreview(page, "flat", 137, -72)
+	optionsFrame.styleButtons.dark = MakeStylePreview(page, "dark", 254, -72)
+	optionsFrame.styleButtons.borderless = MakeStylePreview(page, "borderless", 371, -72)
 
-	OptionsDeps.MakeText(page, "Animate on Cooldown", 28, -145, 11, false)
-	optionsFrame.cooldownAnimate = OptionsDeps.MakeRowValueSlider(
+	MakeText(page, "Animate on Cooldown", 28, -145, 11, false)
+	optionsFrame.cooldownAnimate = MakeRowValueSlider(
 		page, 244, -145, 170, 100, 200, 10
 	)
 
-	OptionsDeps.MakeText(page, "Layout", 18, -194, 12, true)
+	MakeText(page, "Layout", 18, -194, 12, true)
 
-	OptionsDeps.MakeText(page, "Bar Direction", 28, -229, 11, false)
-	optionsFrame.direction = OptionsDeps.MakeBinarySlider(
+	MakeText(page, "Bar Direction", 28, -229, 11, false)
+	optionsFrame.direction = MakeBinarySlider(
 		page, "Horizontal", "Vertical", 244, -226, 170
 	)
 
-	OptionsDeps.MakeText(page, "Icon Direction", 28, -271, 11, false)
-	optionsFrame.iconDirection = OptionsDeps.MakeBinarySlider(
+	MakeText(page, "Icon Direction", 28, -271, 11, false)
+	optionsFrame.iconDirection = MakeBinarySlider(
 		page, "Ascending", "Descending", 244, -268, 170
 	)
 
-	OptionsDeps.MakeText(page, "Sizes", 18, -316, 12, true)
+	MakeText(page, "Sizes", 18, -316, 12, true)
 
-	OptionsDeps.MakeText(page, "Bar Length", 28, -351, 11, false)
-	optionsFrame.length = OptionsDeps.MakeRowValueSlider(
+	MakeText(page, "Bar Length", 28, -351, 11, false)
+	optionsFrame.length = MakeRowValueSlider(
 		page, 244, -351, 170, 100, 1000, 10
 	)
 
-	OptionsDeps.MakeText(page, "Bar Width", 28, -393, 11, false)
-	optionsFrame.width = OptionsDeps.MakeRowValueSlider(
+	MakeText(page, "Bar Width", 28, -393, 11, false)
+	optionsFrame.width = MakeRowValueSlider(
 		page, 244, -393, 170, 2, 100, 2
 	)
 
-	OptionsDeps.MakeText(page, "Icon Oversize", 28, -435, 11, false)
-	optionsFrame.oversize = OptionsDeps.MakeRowValueSlider(
+	MakeText(page, "Icon Oversize", 28, -435, 11, false)
+	optionsFrame.oversize = MakeRowValueSlider(
 		page, 244, -435, 170, -50, 50, 2
 	)
 
-	OptionsDeps.MakeText(page, "Opacity", 18, -480, 12, true)
+	MakeText(page, "Opacity", 18, -480, 12, true)
 
-	OptionsDeps.MakeText(page, "Bar Active", 28, -515, 11, false)
-	optionsFrame.active = OptionsDeps.MakeRowValueSlider(
+	MakeText(page, "Bar Active", 28, -515, 11, false)
+	optionsFrame.active = MakeRowValueSlider(
 		page, 244, -515, 170, 0, 100, 10
 	)
 
-	OptionsDeps.MakeText(page, "Bar Inactive", 28, -557, 11, false)
-	optionsFrame.inactive = OptionsDeps.MakeRowValueSlider(
+	MakeText(page, "Bar Inactive", 28, -557, 11, false)
+	optionsFrame.inactive = MakeRowValueSlider(
 		page, 244, -557, 170, 0, 100, 10
 	)
+end
 
-	-- Spells page
-	spells = CreateFrame("Frame", nil, panel)
-	spells:SetAllPoints(panel)
+local function BuildSpellsPage()
+	local spells = CreateFrame("Frame", nil, optionsFrame.panel)
+	spells:SetAllPoints(optionsFrame.panel)
 	spells:Hide()
 	optionsFrame.spellsPage = spells
 
-	OptionsDeps.MakeText(spells, "Spells", 18, -18, 14, true)
+	MakeText(spells, "Spells", 18, -18, 14, true)
 
-	OptionsDeps.MakeText(spells, "Icon Size", 18, -54, 12, true)
-	optionsFrame.spellIconOverrideCheck = OptionsDeps.MakeCheckbox(
+	MakeText(spells, "Icon Size", 18, -54, 12, true)
+	optionsFrame.spellIconOverrideCheck = MakeCheckbox(
 		spells,
 		"Spell Only Icon Oversize",
 		28,
 		-78
 	)
-	optionsFrame.spellOversize = OptionsDeps.MakeValueSlider(spells, "Icon Oversize", 28, -116, 350, -50, 50, 2)
+	optionsFrame.spellOversize = MakeValueSlider(spells, "Icon Oversize", 28, -116, 350, -50, 50, 2)
 
-	OptionsDeps.MakeText(spells, "Filter Type", 18, -176, 12, true)
-	optionsFrame.filterType = OptionsDeps.MakeBinarySlider(spells, "Blacklist", "Whitelist", 174, -202, 140)
+	MakeText(spells, "Filter Type", 18, -176, 12, true)
+	optionsFrame.filterType = MakeBinarySlider(spells, "Blacklist", "Whitelist", 174, -202, 140)
 
-	OptionsDeps.MakeText(spells, "Add Spell", 18, -242, 12, true)
-	optionsFrame.spellAdd = OptionsDeps.MakeEditBox(spells, 28, -272, 330)
+	MakeText(spells, "Add Spell", 18, -242, 12, true)
+	optionsFrame.spellAdd = MakeEditBox(spells, 28, -272, 330)
 	optionsFrame.spellAdd:SetJustifyH("LEFT")
 	optionsFrame.spellAdd:SetTextInsets(6, 6, 0, 0)
 
-	addButton = OptionsDeps.MakeButton(spells, "Add", 70)
+	local addButton = MakeButton(spells, "Add", 70)
 	addButton:SetPoint("TOPLEFT", spells, "TOPLEFT", 372, -271)
 
-	OptionsDeps.MakeText(spells, "Filtered Spells", 18, -316, 12, true)
+	MakeText(spells, "Filtered Spells", 18, -316, 12, true)
 
-	listFrame = CreateFrame("Frame", nil, spells)
+	local listFrame = CreateFrame("Frame", nil, spells)
 	listFrame:SetPoint("TOPLEFT", spells, "TOPLEFT", 28, -344)
 	listFrame:SetWidth(440)
-	listFrame:SetHeight(OptionsDeps.SPELL_ROW_HEIGHT * OptionsDeps.SPELL_VISIBLE_ROWS)
+	listFrame:SetHeight(FILTER_ROW_HEIGHT * SPELL_VISIBLE_ROWS)
 	listFrame:SetBackdrop({
 		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
 		edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
@@ -2030,11 +1979,14 @@ local function BuildOptions()
 
 	optionsFrame.spellRows = {}
 
-	for i = 1, OptionsDeps.SPELL_VISIBLE_ROWS do
+	local i
+	local row
+
+	for i = 1, SPELL_VISIBLE_ROWS do
 		row = CreateFrame("Frame", nil, listFrame)
-		row:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 4, -4 - ((i - 1) * OptionsDeps.SPELL_ROW_HEIGHT))
+		row:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 4, -4 - ((i - 1) * FILTER_ROW_HEIGHT))
 		row:SetWidth(410)
-		row:SetHeight(OptionsDeps.SPELL_ROW_HEIGHT)
+		row:SetHeight(FILTER_ROW_HEIGHT)
 
 		row.highlight = row:CreateTexture(nil, "BACKGROUND")
 		row.highlight:SetAllPoints(row)
@@ -2054,13 +2006,13 @@ local function BuildOptions()
 		row.name:SetFont([[Fonts\FRIZQT__.TTF]], 11)
 		row.name:SetTextColor(0.9, 0.9, 0.9)
 
-		row.remove = OptionsDeps.MakeButton(row, "X", 24)
+		row.remove = MakeButton(row, "X", 24)
 		row.remove:SetPoint("RIGHT", row, "RIGHT", -2, 0)
 		row.remove:SetScript("OnClick", function()
 			if this:GetParent().dataIndex then
-				OptionsDeps.RemoveSpellAtIndex(this:GetParent().dataIndex)
-				OptionsDeps.RefreshSpellRows()
-				OptionsDeps.ReconcileAllCooldowns()
+				RemoveSpellAtIndex(this:GetParent().dataIndex)
+				RefreshSpellRows()
+				ReconcileAllCooldowns()
 			end
 		end)
 
@@ -2080,7 +2032,7 @@ local function BuildOptions()
 		optionsFrame.spellRows[i] = row
 	end
 
-	scroll = MakeListScrollbar(listFrame, "CoolineSpellScrollBar")
+	local scroll = MakeListScrollbar(listFrame, "CoolineSpellScrollBar")
 	scroll:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -2, -6)
 	scroll:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", -2, 6)
 	scroll:SetMinMaxValues(0, 0)
@@ -2093,7 +2045,7 @@ local function BuildOptions()
 	scroll:SetScript("OnValueChanged", function()
 		if optionsFrame.updating then return end
 		optionsFrame.spellOffset = floor(this:GetValue() + 0.5)
-		OptionsDeps.RefreshSpellRows()
+		RefreshSpellRows()
 	end)
 
 	optionsFrame.filterType:SetScript("OnValueChanged", function()
@@ -2106,12 +2058,12 @@ local function BuildOptions()
 		end
 
 		optionsFrame.spellOffset = 0
-		OptionsDeps.RefreshSpellRows()
-		OptionsDeps.ReconcileAllCooldowns()
+		RefreshSpellRows()
+		ReconcileAllCooldowns()
 	end)
 
 	optionsFrame.spellAdd:SetScript("OnEnterPressed", function()
-		OptionsDeps.AddSpellFromBox()
+		AddSpellFromBox()
 		this:ClearFocus()
 	end)
 
@@ -2120,71 +2072,71 @@ local function BuildOptions()
 	end)
 
 	addButton:SetScript("OnClick", function()
-		OptionsDeps.AddSpellFromBox()
+		AddSpellFromBox()
 	end)
 
 	optionsFrame.lockBar:SetScript("OnClick", function()
 		if optionsFrame.updating then return end
 
 		CoolineCharDB.locked = this:GetChecked() and true or false
-		OptionsDeps.ApplyBarLockState()
+		ApplyBarLockState()
 	end)
 
 	optionsFrame.minimapToggle:SetScript("OnClick", function()
 		if optionsFrame.updating then return end
 
 		CoolineDB.showMinimapButton = this:GetChecked() and true or false
-		OptionsDeps.UpdateMinimapButton()
+		UpdateMinimapButton()
 	end)
 
-	appearanceTab:SetScript("OnClick", function()
-		OptionsDeps.SelectOptionsTab(appearanceTab)
-		OptionsDeps.ShowOptionsPage("appearance")
+	optionsFrame.appearanceTab:SetScript("OnClick", function()
+		SelectOptionsTab(optionsFrame.appearanceTab)
+		ShowOptionsPage("appearance")
 	end)
 
-	spellsTab:SetScript("OnClick", function()
-		OptionsDeps.SelectOptionsTab(spellsTab)
+	optionsFrame.spellsTab:SetScript("OnClick", function()
+		SelectOptionsTab(optionsFrame.spellsTab)
 		optionsFrame.updating = true
 		optionsFrame.filterType:SetValue(CoolineCharDB.filters.mode == "whitelist" and 1 or 0)
 		optionsFrame.updating = false
-		OptionsDeps.ShowOptionsPage("spells")
+		ShowOptionsPage("spells")
 	end)
+end
 
-
-	-- Items page
-	items = CreateFrame("Frame", nil, panel)
-	items:SetAllPoints(panel)
+local function BuildItemsPage()
+	local items = CreateFrame("Frame", nil, optionsFrame.panel)
+	items:SetAllPoints(optionsFrame.panel)
 	items:Hide()
 	optionsFrame.itemsPage = items
 
-	OptionsDeps.MakeText(items, "Items", 18, -18, 14, true)
+	MakeText(items, "Items", 18, -18, 14, true)
 
-	OptionsDeps.MakeText(items, "Icon Size", 18, -54, 12, true)
-	optionsFrame.itemIconOverrideCheck = OptionsDeps.MakeCheckbox(
+	MakeText(items, "Icon Size", 18, -54, 12, true)
+	optionsFrame.itemIconOverrideCheck = MakeCheckbox(
 		items,
 		"Item Only Icon Oversize",
 		28,
 		-78
 	)
-	optionsFrame.itemOversize = OptionsDeps.MakeValueSlider(items, "Icon Oversize", 28, -116, 350, -50, 50, 2)
+	optionsFrame.itemOversize = MakeValueSlider(items, "Icon Oversize", 28, -116, 350, -50, 50, 2)
 
-	OptionsDeps.MakeText(items, "Filter Type", 18, -176, 12, true)
-	optionsFrame.itemFilterType = OptionsDeps.MakeBinarySlider(items, "Blacklist", "Whitelist", 174, -202, 140)
+	MakeText(items, "Filter Type", 18, -176, 12, true)
+	optionsFrame.itemFilterType = MakeBinarySlider(items, "Blacklist", "Whitelist", 174, -202, 140)
 
-	OptionsDeps.MakeText(items, "Add Item", 18, -242, 12, true)
-	optionsFrame.itemAdd = OptionsDeps.MakeEditBox(items, 28, -272, 330)
+	MakeText(items, "Add Item", 18, -242, 12, true)
+	optionsFrame.itemAdd = MakeEditBox(items, 28, -272, 330)
 	optionsFrame.itemAdd:SetJustifyH("LEFT")
 	optionsFrame.itemAdd:SetTextInsets(6, 6, 0, 0)
 
-	itemAddButton = OptionsDeps.MakeButton(items, "Add", 70)
+	local itemAddButton = MakeButton(items, "Add", 70)
 	itemAddButton:SetPoint("TOPLEFT", items, "TOPLEFT", 372, -271)
 
-	OptionsDeps.MakeText(items, "Filtered Items", 18, -316, 12, true)
+	MakeText(items, "Filtered Items", 18, -316, 12, true)
 
 	local itemListFrame = CreateFrame("Frame", nil, items)
 	itemListFrame:SetPoint("TOPLEFT", items, "TOPLEFT", 28, -344)
 	itemListFrame:SetWidth(440)
-	itemListFrame:SetHeight(OptionsDeps.SPELL_ROW_HEIGHT * OptionsDeps.ITEM_VISIBLE_ROWS)
+	itemListFrame:SetHeight(FILTER_ROW_HEIGHT * ITEM_VISIBLE_ROWS)
 	itemListFrame:SetBackdrop({
 		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
 		edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
@@ -2196,11 +2148,14 @@ local function BuildOptions()
 
 	optionsFrame.itemRows = {}
 
-	for i = 1, OptionsDeps.ITEM_VISIBLE_ROWS do
+	local i
+	local row
+
+	for i = 1, ITEM_VISIBLE_ROWS do
 		row = CreateFrame("Frame", nil, itemListFrame)
-		row:SetPoint("TOPLEFT", itemListFrame, "TOPLEFT", 4, -4 - ((i - 1) * OptionsDeps.SPELL_ROW_HEIGHT))
+		row:SetPoint("TOPLEFT", itemListFrame, "TOPLEFT", 4, -4 - ((i - 1) * FILTER_ROW_HEIGHT))
 		row:SetWidth(410)
-		row:SetHeight(OptionsDeps.SPELL_ROW_HEIGHT)
+		row:SetHeight(FILTER_ROW_HEIGHT)
 
 		row.highlight = row:CreateTexture(nil, "BACKGROUND")
 		row.highlight:SetAllPoints(row)
@@ -2220,13 +2175,13 @@ local function BuildOptions()
 		row.name:SetFont([[Fonts\FRIZQT__.TTF]], 11)
 		row.name:SetTextColor(0.9, 0.9, 0.9)
 
-		row.remove = OptionsDeps.MakeButton(row, "X", 24)
+		row.remove = MakeButton(row, "X", 24)
 		row.remove:SetPoint("RIGHT", row, "RIGHT", -2, 0)
 		row.remove:SetScript("OnClick", function()
 			if this:GetParent().dataIndex then
-				OptionsDeps.RemoveItemAtIndex(this:GetParent().dataIndex)
-				OptionsDeps.RefreshItemRows()
-				OptionsDeps.ReconcileAllCooldowns()
+				RemoveItemAtIndex(this:GetParent().dataIndex)
+				RefreshItemRows()
+				ReconcileAllCooldowns()
 			end
 		end)
 
@@ -2256,7 +2211,7 @@ local function BuildOptions()
 	itemScroll:SetScript("OnValueChanged", function()
 		if optionsFrame.updating then return end
 		optionsFrame.itemOffset = floor(this:GetValue() + 0.5)
-		OptionsDeps.RefreshItemRows()
+		RefreshItemRows()
 	end)
 
 	optionsFrame.itemFilterType:SetScript("OnValueChanged", function()
@@ -2267,12 +2222,12 @@ local function BuildOptions()
 			CoolineCharDB.itemFilters.mode = "blacklist"
 		end
 		optionsFrame.itemOffset = 0
-		OptionsDeps.RefreshItemRows()
-		OptionsDeps.ReconcileAllCooldowns()
+		RefreshItemRows()
+		ReconcileAllCooldowns()
 	end)
 
 	optionsFrame.itemAdd:SetScript("OnEnterPressed", function()
-		OptionsDeps.AddItemFromBox()
+		AddItemFromBox()
 		this:ClearFocus()
 	end)
 
@@ -2281,15 +2236,15 @@ local function BuildOptions()
 	end)
 
 	itemAddButton:SetScript("OnClick", function()
-		OptionsDeps.AddItemFromBox()
+		AddItemFromBox()
 	end)
 
-	itemsTab:SetScript("OnClick", function()
-		OptionsDeps.SelectOptionsTab(itemsTab)
+	optionsFrame.itemsTab:SetScript("OnClick", function()
+		SelectOptionsTab(optionsFrame.itemsTab)
 		optionsFrame.updating = true
 		optionsFrame.itemFilterType:SetValue(CoolineCharDB.itemFilters.mode == "whitelist" and 1 or 0)
 		optionsFrame.updating = false
-		OptionsDeps.ShowOptionsPage("items")
+		ShowOptionsPage("items")
 	end)
 
 
@@ -2302,8 +2257,8 @@ local function BuildOptions()
 			CoolineCharDB.spellIconOversize = visuals.iconoversize
 		end
 
-		OptionsDeps.ApplyVisualLayout()
-		OptionsDeps.RefreshSpellIconOptions()
+		ApplyVisualLayout()
+		RefreshSpellIconOptions()
 	end)
 
 	optionsFrame.spellOversize:SetScript("OnValueChanged", function()
@@ -2318,27 +2273,27 @@ local function BuildOptions()
 			this.edit:SetText(tostring(value))
 		end
 
-		OptionsDeps.ApplyVisualLayout()
+		ApplyVisualLayout()
 	end)
 
 	optionsFrame.spellOversize.edit:SetScript("OnEnterPressed", function()
-		local value = OptionsDeps.ReadInteger(this, -50)
+		local value = ReadInteger(this, -50)
 		this:ClearFocus()
 
 		if not value then
-			OptionsDeps.RefreshSpellIconOptions()
+			RefreshSpellIconOptions()
 			return
 		end
 
 		CoolineCharDB.spellIconOverride = true
 		CoolineCharDB.spellIconOversize = value
-		OptionsDeps.ApplyVisualLayout()
-		OptionsDeps.RefreshSpellIconOptions()
+		ApplyVisualLayout()
+		RefreshSpellIconOptions()
 	end)
 
 	optionsFrame.spellOversize.edit:SetScript("OnEscapePressed", function()
 		this:ClearFocus()
-		OptionsDeps.RefreshSpellIconOptions()
+		RefreshSpellIconOptions()
 	end)
 
 	optionsFrame.itemIconOverrideCheck:SetScript("OnClick", function()
@@ -2350,8 +2305,8 @@ local function BuildOptions()
 			CoolineCharDB.itemIconOversize = visuals.iconoversize
 		end
 
-		OptionsDeps.ApplyVisualLayout()
-		OptionsDeps.RefreshItemIconOptions()
+		ApplyVisualLayout()
+		RefreshItemIconOptions()
 	end)
 
 	optionsFrame.itemOversize:SetScript("OnValueChanged", function()
@@ -2366,27 +2321,27 @@ local function BuildOptions()
 			this.edit:SetText(tostring(value))
 		end
 
-		OptionsDeps.ApplyVisualLayout()
+		ApplyVisualLayout()
 	end)
 
 	optionsFrame.itemOversize.edit:SetScript("OnEnterPressed", function()
-		local value = OptionsDeps.ReadInteger(this, -50)
+		local value = ReadInteger(this, -50)
 		this:ClearFocus()
 
 		if not value then
-			OptionsDeps.RefreshItemIconOptions()
+			RefreshItemIconOptions()
 			return
 		end
 
 		CoolineCharDB.itemIconOverride = true
 		CoolineCharDB.itemIconOversize = value
-		OptionsDeps.ApplyVisualLayout()
-		OptionsDeps.RefreshItemIconOptions()
+		ApplyVisualLayout()
+		RefreshItemIconOptions()
 	end)
 
 	optionsFrame.itemOversize.edit:SetScript("OnEscapePressed", function()
 		this:ClearFocus()
-		OptionsDeps.RefreshItemIconOptions()
+		RefreshItemIconOptions()
 	end)
 
 	optionsFrame.cooldownAnimate:SetScript("OnValueChanged", function()
@@ -2395,7 +2350,7 @@ local function BuildOptions()
 		local value = floor(this:GetValue() + 0.5)
 		visuals.cooldownanimate = value
 		this.edit:SetText(value .. "%")
-		OptionsDeps.SetValueControlDimmed(this, value == 100)
+		SetValueControlDimmed(this, value == 100)
 	end)
 
 	optionsFrame.cooldownAnimate.edit:SetScript("OnEnterPressed", function()
@@ -2405,7 +2360,7 @@ local function BuildOptions()
 		this:ClearFocus()
 
 		if not value or value <= 0 then
-			OptionsDeps.RefreshAppearanceOptions()
+			RefreshAppearanceOptions()
 			return
 		end
 
@@ -2416,46 +2371,47 @@ local function BuildOptions()
 		optionsFrame.cooldownAnimate:SetValue(min(max(value, 100), 200))
 		optionsFrame.updating = false
 
-		OptionsDeps.RefreshAppearanceOptions()
+		RefreshAppearanceOptions()
 	end)
 
 	optionsFrame.cooldownAnimate.edit:SetScript("OnEscapePressed", function()
 		this:ClearFocus()
-		OptionsDeps.RefreshAppearanceOptions()
+		RefreshAppearanceOptions()
 	end)
+end
 
-	-- Appearance scripts
+local function BindAppearanceScripts()
 	optionsFrame.scope:SetScript("OnValueChanged", function()
 		if optionsFrame.updating then return end
-		OptionsDeps.SelectVisualScope(this:GetValue() >= 0.5)
-		OptionsDeps.ApplyVisualLayout()
-		OptionsDeps.RefreshAppearanceOptions()
+		SelectVisualScope(this:GetValue() >= 0.5)
+		ApplyVisualLayout()
+		RefreshAppearanceOptions()
 	end)
 
 	optionsFrame.direction:SetScript("OnValueChanged", function()
 		if optionsFrame.updating then return end
 		visuals.vertical = this:GetValue() >= 0.5
-		OptionsDeps.ApplyVisualLayout()
+		ApplyVisualLayout()
 	end)
 
 	optionsFrame.iconDirection:SetScript("OnValueChanged", function()
 		if optionsFrame.updating then return end
 		visuals.reverse = this:GetValue() >= 0.5
-		OptionsDeps.ApplyVisualLayout()
+		ApplyVisualLayout()
 	end)
 
 	optionsFrame.length:SetScript("OnValueChanged", function()
 		if optionsFrame.updating then return end
 		visuals.length = floor(this:GetValue() + 0.5)
 		this.edit:SetText(tostring(visuals.length))
-		OptionsDeps.ApplyVisualLayout()
+		ApplyVisualLayout()
 	end)
 
 	optionsFrame.width:SetScript("OnValueChanged", function()
 		if optionsFrame.updating then return end
 		visuals.width = floor(this:GetValue() + 0.5)
 		this.edit:SetText(tostring(visuals.width))
-		OptionsDeps.ApplyVisualLayout()
+		ApplyVisualLayout()
 	end)
 
 	optionsFrame.oversize:SetScript("OnValueChanged", function()
@@ -2464,7 +2420,7 @@ local function BuildOptions()
 		value = floor(this:GetValue() + 0.5)
 		visuals.iconoversize = value
 		if value > 0 then this.edit:SetText("+" .. value) else this.edit:SetText(tostring(value)) end
-		OptionsDeps.ApplyVisualLayout()
+		ApplyVisualLayout()
 	end)
 
 	optionsFrame.active:SetScript("OnValueChanged", function()
@@ -2484,67 +2440,67 @@ local function BuildOptions()
 	end)
 
 	optionsFrame.length.edit:SetScript("OnEnterPressed", function()
-		local value = OptionsDeps.ReadInteger(this, 100)
+		local value = ReadInteger(this, 100)
 		this:ClearFocus()
-		if not value then OptionsDeps.RefreshAppearanceOptions() return end
+		if not value then RefreshAppearanceOptions() return end
 		visuals.length = value
 		optionsFrame.updating = true
 		optionsFrame.length:SetValue(min(value, 1000))
 		optionsFrame.updating = false
-		OptionsDeps.ApplyVisualLayout()
-		OptionsDeps.RefreshAppearanceOptions()
+		ApplyVisualLayout()
+		RefreshAppearanceOptions()
 	end)
 
 	optionsFrame.width.edit:SetScript("OnEnterPressed", function()
-		local value = OptionsDeps.ReadInteger(this, 2)
+		local value = ReadInteger(this, 2)
 		this:ClearFocus()
-		if not value then OptionsDeps.RefreshAppearanceOptions() return end
+		if not value then RefreshAppearanceOptions() return end
 		visuals.width = value
 		optionsFrame.updating = true
 		optionsFrame.width:SetValue(min(value, 100))
 		optionsFrame.updating = false
-		OptionsDeps.ApplyVisualLayout()
-		OptionsDeps.RefreshAppearanceOptions()
+		ApplyVisualLayout()
+		RefreshAppearanceOptions()
 	end)
 
 	optionsFrame.oversize.edit:SetScript("OnEnterPressed", function()
-		local value = OptionsDeps.ReadInteger(this, -50)
+		local value = ReadInteger(this, -50)
 		this:ClearFocus()
-		if not value then OptionsDeps.RefreshAppearanceOptions() return end
+		if not value then RefreshAppearanceOptions() return end
 		visuals.iconoversize = value
 		optionsFrame.updating = true
 		optionsFrame.oversize:SetValue(min(value, 50))
 		optionsFrame.updating = false
-		OptionsDeps.ApplyVisualLayout()
-		OptionsDeps.RefreshAppearanceOptions()
+		ApplyVisualLayout()
+		RefreshAppearanceOptions()
 	end)
 
 	optionsFrame.active.edit:SetScript("OnEnterPressed", function()
 		local text = string.gsub(this:GetText(), "%%", "")
 		local value = tonumber(text)
 		this:ClearFocus()
-		if not value then OptionsDeps.RefreshAppearanceOptions() return end
+		if not value then RefreshAppearanceOptions() return end
 		value = floor(value + 0.5)
 		if value < 0 then value = 0 end
 		visuals.activealpha = value / 100
 		optionsFrame.updating = true
 		optionsFrame.active:SetValue(min(value, 100))
 		optionsFrame.updating = false
-		OptionsDeps.RefreshAppearanceOptions()
+		RefreshAppearanceOptions()
 	end)
 
 	optionsFrame.inactive.edit:SetScript("OnEnterPressed", function()
 		local text = string.gsub(this:GetText(), "%%", "")
 		local value = tonumber(text)
 		this:ClearFocus()
-		if not value then OptionsDeps.RefreshAppearanceOptions() return end
+		if not value then RefreshAppearanceOptions() return end
 		value = floor(value + 0.5)
 		if value < 0 then value = 0 end
 		visuals.inactivealpha = value / 100
 		optionsFrame.updating = true
 		optionsFrame.inactive:SetValue(min(value, 100))
 		optionsFrame.updating = false
-		OptionsDeps.RefreshAppearanceOptions()
+		RefreshAppearanceOptions()
 	end)
 
 	local edits = {
@@ -2557,12 +2513,22 @@ local function BuildOptions()
 	for i = 1, table.getn(edits) do
 		edits[i]:SetScript("OnEscapePressed", function()
 			this:ClearFocus()
-			OptionsDeps.RefreshAppearanceOptions()
+			RefreshAppearanceOptions()
 		end)
 	end
+end
 
-	OptionsDeps.SelectOptionsTab(appearanceTab)
-	OptionsDeps.ShowOptionsPage("appearance")
+local function BuildOptions()
+	if optionsFrame then return end
+
+	BuildOptionsShell()
+	BuildAppearancePage()
+	BuildSpellsPage()
+	BuildItemsPage()
+	BindAppearanceScripts()
+
+	SelectOptionsTab(optionsFrame.appearanceTab)
+	ShowOptionsPage("appearance")
 end
 
 ToggleOptions = function()
