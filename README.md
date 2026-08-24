@@ -1,4 +1,4 @@
-# Cooline 1.9.8
+# Cooline 1.9.9
 
 A lightweight cooldown timeline addon for **World of Warcraft 1.12.1**, based on the original [Cooline by shirsig](https://github.com/shirsig/cooline).
 
