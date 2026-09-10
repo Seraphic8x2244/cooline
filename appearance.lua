@@ -30,9 +30,21 @@ local function GetFontEntry(key)
 	return FONT_CHOICES[1]
 end
 
+local function GetClientDefaultFont()
+	local path
+
+	-- Use the font the client is actually using for Blizzard UI text first.
+	-- This also respects UI replacements which alter the standard GameFont.
+	if GameFontNormal and GameFontNormal.GetFont then
+		path = GameFontNormal:GetFont()
+	end
+
+	return path or STANDARD_TEXT_FONT or [[Fonts\FRIZQT__.TTF]]
+end
+
 local function GetFontPath(key)
 	local entry = GetFontEntry(key)
-	return entry.path or STANDARD_TEXT_FONT or [[Fonts\FRIZQT__.TTF]]
+	return entry.path or GetClientDefaultFont()
 end
 
 local function EnsureFontDefaults()
@@ -50,21 +62,38 @@ local function GetFontKey()
 	return GetFontEntry(key).key
 end
 
+local function ApplyFont(fontString, path, size)
+	if not fontString or not fontString.SetFont then return end
+
+	fontString:SetFont(path, size)
+	if not fontString:GetFont() then
+		fontString:SetFont(GetClientDefaultFont(), size)
+	end
+end
+
 local function ApplyTimelineFont()
 	local key = GetFontKey()
 	local path = GetFontPath(key)
+	local bar = getglobal("CoolineBar")
 	local i
-	local label
-	local currentPath
+	local data
 
-	if not overlay or not overlay.labels then return end
+	-- Apply to the actual visible overlay labels.
+	if overlay and overlay.labels then
+		for i = 1, table.getn(overlay.labels) do
+			ApplyFont(overlay.labels[i], path, 10)
+		end
+	end
 
-	for i = 1, table.getn(overlay.labels) do
-		label = overlay.labels[i]
-		label:SetFont(path, 10)
-		currentPath = label:GetFont()
-		if not currentPath then
-			label:SetFont(STANDARD_TEXT_FONT or [[Fonts\FRIZQT__.TTF]], 10)
+	-- Keep the original timeline regions in sync as well. They are hidden
+	-- layout anchors in 1.9.x, but updating both removes any dependency on
+	-- which set of labels a 1.12-derived client happens to render.
+	if bar and bar.labels then
+		for i = 1, table.getn(bar.labels) do
+			data = bar.labels[i]
+			if data and data.frame then
+				ApplyFont(data.frame, path, 10)
+			end
 		end
 	end
 
@@ -111,10 +140,7 @@ end
 
 local function SetFontStringFont(fontString, key, size)
 	if not fontString or not fontString.SetFont then return end
-	fontString:SetFont(GetFontPath(key), size or 12)
-	if not fontString:GetFont() then
-		fontString:SetFont(STANDARD_TEXT_FONT or [[Fonts\FRIZQT__.TTF]], size or 12)
-	end
+	ApplyFont(fontString, GetFontPath(key), size or 12)
 end
 
 local function UpdateDropdown()
@@ -190,7 +216,7 @@ local function BuildFontOption()
 
 	label = page:CreateFontString(nil, "OVERLAY")
 	label:SetPoint("TOPLEFT", page, "TOPLEFT", 28, -610)
-	label:SetFont(STANDARD_TEXT_FONT or [[Fonts\FRIZQT__.TTF]], 11)
+	label:SetFont(GetClientDefaultFont(), 11)
 	label:SetTextColor(0.9, 0.9, 0.9)
 	label:SetText(L("Bar Font"))
 
