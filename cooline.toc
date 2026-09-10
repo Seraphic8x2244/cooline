@@ -1,8 +1,11 @@
 ## Interface: 11200
 ## Title: Cooline
 ## Author: Seraphic8x2244
-## Version: 1.9.9
+## Version: 1.9.10
 ## SavedVariables: CoolineDB
 ## SavedVariablesPerCharacter: CoolineCharDB
 
+locales.lua
 cooline.lua
+compat.lua
+appearance.lua
