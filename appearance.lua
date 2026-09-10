@@ -101,37 +101,6 @@ local function ApplyTimelineFont()
 	lastFontKey = key
 end
 
-local function UpdateTimelineLayer(bar)
-	local children
-	local maxLevel
-	local child
-	local childLevel
-	local i
-
-	if not overlay or not bar then return end
-
-	maxLevel = bar:GetFrameLevel()
-	if bar.border and bar.border.GetChildren then
-		children = { bar.border:GetChildren() }
-		for i = 1, table.getn(children) do
-			child = children[i]
-			if child and child.GetFrameLevel then
-				childLevel = child:GetFrameLevel()
-				if childLevel and childLevel > maxLevel then
-					maxLevel = childLevel
-				end
-			end
-		end
-	end
-
-	-- Vanilla-era clients can renumber/compress frame levels as children are
-	-- created. Keep the text exactly one level above Cooline's icon frames
-	-- instead of relying on an arbitrary very-high level.
-	if overlay:GetFrameLevel() ~= maxLevel + 1 then
-		overlay:SetFrameLevel(maxLevel + 1)
-	end
-end
-
 local function BuildLabelOverlay()
 	local bar = getglobal("CoolineBar")
 	local i
@@ -140,9 +109,13 @@ local function BuildLabelOverlay()
 
 	if overlay or not bar or not bar.labels then return end
 
-	overlay = CreateFrame("Frame", nil, bar)
+	-- Keep the visible timeline text out of the bar/border child hierarchy.
+	-- Cooldown icons remain on the bar's normal strata; this dedicated HIGH
+	-- strata guarantees the order bar -> icons -> timeline text.
+	overlay = CreateFrame("Frame", nil, UIParent)
 	overlay:SetAllPoints(bar)
-	overlay:SetFrameLevel(bar:GetFrameLevel() + 2)
+	overlay:SetFrameStrata("HIGH")
+	overlay:SetFrameLevel(1)
 	overlay.labels = {}
 	bar.labelOverlay = overlay
 
@@ -163,14 +136,13 @@ local function BuildLabelOverlay()
 			tinsert(overlay.labels, label)
 
 			-- Keep the original regions as invisible layout anchors. The main
-			-- addon can continue repositioning them while this higher frame level
-			-- guarantees the visible labels draw over every cooldown icon.
+			-- addon can continue repositioning them while the visible labels stay
+			-- on the dedicated text strata above the cooldown icons.
 			data.frame:Hide()
 		end
 	end
 
 	ApplyTimelineFont()
-	UpdateTimelineLayer(bar)
 end
 
 local function SetFontStringFont(fontString, key, size)
@@ -426,8 +398,6 @@ driver:SetScript("OnUpdate", function()
 	end
 
 	bar = getglobal("CoolineBar")
-	UpdateTimelineLayer(bar)
-
 	if overlay and bar and bar.bg then
 		overlay:SetAlpha(bar.bg:GetAlpha())
 	end
