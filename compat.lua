@@ -105,17 +105,25 @@ local function GetSpellCount()
 	return highest
 end
 
+local function GetVisuals()
+	if CoolineCharDB and CoolineCharDB.useCharacterVisuals and CoolineCharDB.visuals then
+		return CoolineCharDB.visuals
+	end
+	return CoolineDB and CoolineDB.visuals
+end
+
 local function FindFailedSpell(message)
 	local count = GetSpellCount()
 	local now = GetTime()
 	local bestName
 	local bestTexture
+	local bestRemaining
 	local bestLength = 0
 	local i
 	local name
 	local startTime, duration, enabled
 
-	if not message or message == "" then return nil, nil end
+	if not message or message == "" then return nil, nil, nil end
 
 	for i = 1, count do
 		name = GetSpellName(i, BOOKTYPE_SPELL)
@@ -125,19 +133,84 @@ local function FindFailedSpell(message)
 			   startTime and (startTime + duration) > now and string.len(name) > bestLength then
 				bestName = name
 				bestTexture = GetSpellTexture(i, BOOKTYPE_SPELL)
+				bestRemaining = (startTime + duration) - now
 				bestLength = string.len(name)
 			end
 		end
 	end
 
-	return bestName, bestTexture
+	return bestName, bestTexture, bestRemaining
 end
 
-local function FindCooldownFrame(texture)
+local function TimelineOffset(timeLeft)
+	local visuals = GetVisuals()
+	local span
+	local section
+
+	if not visuals or not timeLeft then return nil end
+	span = visuals.length or 360
+	section = span / 6
+
+	if timeLeft <= 0 then
+		return 0
+	elseif timeLeft < 1 then
+		return section * timeLeft
+	elseif timeLeft < 3 then
+		return section * (1 + ((timeLeft - 1) / 2))
+	elseif timeLeft < 10 then
+		return section * (2 + ((timeLeft - 3) / 7))
+	elseif timeLeft < 30 then
+		return section * (3 + ((timeLeft - 10) / 20))
+	elseif timeLeft < 120 then
+		return section * (4 + ((timeLeft - 30) / 90))
+	elseif timeLeft < 360 then
+		return section * (5 + ((timeLeft - 120) / 240))
+	end
+
+	return span
+end
+
+local function GetFrameTimelineOffset(frame, bar)
+	local visuals = GetVisuals()
+	local x, y
+	local edge
+
+	if not visuals or not frame or not bar then return nil end
+	x, y = frame:GetCenter()
+
+	if visuals.vertical then
+		if not y then return nil end
+		if visuals.reverse then
+			edge = bar:GetTop()
+			if edge then return edge - y end
+		else
+			edge = bar:GetBottom()
+			if edge then return y - edge end
+		end
+	else
+		if not x then return nil end
+		if visuals.reverse then
+			edge = bar:GetRight()
+			if edge then return edge - x end
+		else
+			edge = bar:GetLeft()
+			if edge then return x - edge end
+		end
+	end
+
+	return nil
+end
+
+local function FindCooldownFrame(texture, remaining)
 	local bar = getglobal("CoolineBar")
 	local children
 	local i
 	local child
+	local expected = TimelineOffset(remaining)
+	local actual
+	local distance
+	local best
+	local bestDistance
 
 	if not bar or not bar.border or not texture then return nil end
 
@@ -146,18 +219,22 @@ local function FindCooldownFrame(texture)
 		child = children[i]
 		if child and child.icon and child.icon.GetTexture and
 		   child.icon:GetTexture() == texture and child:IsShown() then
-			return child
+			if not expected then return child end
+
+			actual = GetFrameTimelineOffset(child, bar)
+			if actual then
+				distance = math.abs(actual - expected)
+				if not bestDistance or distance < bestDistance then
+					best = child
+					bestDistance = distance
+				end
+			elseif not best then
+				best = child
+			end
 		end
 	end
 
-	return nil
-end
-
-local function GetVisuals()
-	if CoolineCharDB and CoolineCharDB.useCharacterVisuals and CoolineCharDB.visuals then
-		return CoolineCharDB.visuals
-	end
-	return CoolineDB and CoolineDB.visuals
+	return best
 end
 
 local function GetSpellBaseSize()
@@ -174,15 +251,15 @@ end
 
 local function HandleFailedSpell(message)
 	local visuals = GetVisuals()
-	local _, texture
+	local _, texture, remaining
 	local frame
 
 	if not visuals or not visuals.cooldownanimate or visuals.cooldownanimate == 100 then return end
 
-	_, texture = FindFailedSpell(message)
+	_, texture, remaining = FindFailedSpell(message)
 	if not texture then return end
 
-	frame = FindCooldownFrame(texture)
+	frame = FindCooldownFrame(texture, remaining)
 	if not frame then return end
 
 	frame.coolineLocalePulseStart = GetTime()
