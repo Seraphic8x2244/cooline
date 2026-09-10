@@ -1,4 +1,4 @@
-# Cooline 1.9.9
+# Cooline 1.9.10
 
 A lightweight cooldown timeline addon for **World of Warcraft 1.12.1**, based on the original [Cooline by shirsig](https://github.com/shirsig/cooline).
 
@@ -10,16 +10,23 @@ This fork intends to keep the genuinely excellent base behaviour, but has been c
 
 ### Improvements
 
-- **Removal of hard-coded user configuration** - New In-game configuration menu
+- **Removal of hard-coded user configuration** - New in-game configuration menu
 - Account-wide appearance settings - optional per-character toggle
 - Horizontal and vertical layouts fixed
 - Configurable bar, icon and opacity settings
-- Per-character spell and item filtering - Blacklist and whitelist support
+- Per-character spell and item filtering - blacklist and whitelist support
+- Locale-scoped spell and item filters so changing client language does not mix incompatible localized names
+- Locale-safe cooldown-failure animation without parsing English combat text
+- Localized configuration text for supported Vanilla client locales, with English fallback
+- Locale-aware UI font handling using the client's standard text font
+- Timeline labels always render above cooldown icons
+- Selectable timeline font: Client Default, Friz Quadrata, Arial Narrow, Morpheus or Skurri
+- Opacity values are clamped to valid 0-100% values
 - Minimap button to access options
 - Bar lockable
 - Right-click the Cooline bar to open options - Alt-click to reposition
 - A few basic skins to start with
-- Configurable animation when casting spell on cooldown
+- Configurable animation when casting a spell on cooldown
 
 ## Version
 
