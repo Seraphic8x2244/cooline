@@ -231,6 +231,7 @@ local function WrapCooldownScripts()
 	local bar = getglobal("CoolineBar")
 	local oldEvent
 	local oldUpdate
+	local useOriginalEnglishPulse = locale == "enUS" or locale == "enGB"
 
 	if not bar or bar.coolineLocaleWrapped then return end
 	bar.coolineLocaleWrapped = true
@@ -238,7 +239,7 @@ local function WrapCooldownScripts()
 	oldEvent = bar:GetScript("OnEvent")
 	if oldEvent then
 		bar:SetScript("OnEvent", function()
-			if event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" then
+			if event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" and not useOriginalEnglishPulse then
 				HandleFailedSpell(arg1)
 			else
 				oldEvent()
@@ -246,12 +247,14 @@ local function WrapCooldownScripts()
 		end)
 	end
 
-	oldUpdate = bar:GetScript("OnUpdate")
-	if oldUpdate then
-		bar:SetScript("OnUpdate", function()
-			oldUpdate()
-			UpdateLocalePulses()
-		end)
+	if not useOriginalEnglishPulse then
+		oldUpdate = bar:GetScript("OnUpdate")
+		if oldUpdate then
+			bar:SetScript("OnUpdate", function()
+				oldUpdate()
+				UpdateLocalePulses()
+			end)
+		end
 	end
 end
 
@@ -277,6 +280,7 @@ driver:RegisterEvent("VARIABLES_LOADED")
 driver:SetScript("OnEvent", function()
 	if event == "VARIABLES_LOADED" and Setup() then
 		this:UnregisterEvent("VARIABLES_LOADED")
+		this:SetScript("OnUpdate", nil)
 	end
 end)
 driver:SetScript("OnUpdate", function()
