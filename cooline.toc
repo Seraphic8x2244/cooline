@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: Cooline
 ## Author: Seraphic8x2244
-## Version: 1.9.13
+## Version: 1.9.14
 ## SavedVariables: CoolineDB
 ## SavedVariablesPerCharacter: CoolineCharDB
 
