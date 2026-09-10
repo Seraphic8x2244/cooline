@@ -109,15 +109,28 @@ local function BuildLabelOverlay()
 	ApplyTimelineFont()
 end
 
+local function SetFontStringFont(fontString, key, size)
+	if not fontString or not fontString.SetFont then return end
+	fontString:SetFont(GetFontPath(key), size or 12)
+	if not fontString:GetFont() then
+		fontString:SetFont(STANDARD_TEXT_FONT or [[Fonts\FRIZQT__.TTF]], size or 12)
+	end
+end
+
 local function UpdateDropdown()
 	local key
 	local entry
+	local selectedText
 	if not dropdown then return end
 
 	key = GetFontKey()
 	entry = GetFontEntry(key)
 	UIDropDownMenu_SetSelectedValue(dropdown, key)
 	UIDropDownMenu_SetText(entry.name, dropdown)
+
+	-- Preview the active font in the closed dropdown as well as in the menu.
+	selectedText = getglobal(dropdown:GetName() .. "Text")
+	SetFontStringFont(selectedText, key, 12)
 end
 
 local function SetFontFromDropdown()
@@ -132,9 +145,13 @@ end
 
 local function InitializeFontDropdown()
 	local current = GetFontKey()
+	local level = UIDROPDOWNMENU_MENU_LEVEL or 1
+	local list = getglobal("DropDownList" .. level)
 	local i
 	local entry
 	local info
+	local button
+	local fontString
 
 	for i = 1, table.getn(FONT_CHOICES) do
 		entry = FONT_CHOICES[i]
@@ -148,6 +165,18 @@ local function InitializeFontDropdown()
 		info.func = SetFontFromDropdown
 		info.checked = entry.key == current and 1 or nil
 		UIDropDownMenu_AddButton(info)
+
+		-- Blizzard reuses dropdown buttons. Apply the represented font after
+		-- the row has been populated so each option acts as its own preview.
+		if list and list.numButtons then
+			button = getglobal("DropDownList" .. level .. "Button" .. list.numButtons)
+			if button and button.GetFontString then
+				fontString = button:GetFontString()
+			else
+				fontString = nil
+			end
+			SetFontStringFont(fontString, entry.key, 12)
+		end
 	end
 end
 
@@ -166,7 +195,9 @@ local function BuildFontOption()
 	label:SetText(L("Bar Font"))
 
 	dropdown = CreateFrame("Frame", "CoolineBarFontDropDown", page, "UIDropDownMenuTemplate")
-	dropdown:SetPoint("TOPLEFT", page, "TOPLEFT", 218, -594)
+	-- The template text is inset from the frame. This aligns the visible
+	-- dropdown text with the x=244 control column used by the rows above.
+	dropdown:SetPoint("TOPLEFT", page, "TOPLEFT", 219, -594)
 	UIDropDownMenu_SetWidth(180, dropdown)
 	UIDropDownMenu_Initialize(dropdown, InitializeFontDropdown)
 	UpdateDropdown()
