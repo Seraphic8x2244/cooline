@@ -2,6 +2,7 @@ local L = CoolineLocale and CoolineLocale.Text or function(text) return text end
 local setupComplete = false
 local overlay
 local dropdown
+local fontPopup
 local lastFontKey
 local syncElapsed = 0
 
@@ -151,58 +152,123 @@ local function UpdateDropdown()
 
 	key = GetFontKey()
 	entry = GetFontEntry(key)
-	UIDropDownMenu_SetSelectedValue(dropdown, key)
 	UIDropDownMenu_SetText(entry.name, dropdown)
 
-	-- Preview the active font in the closed dropdown as well as in the menu.
+	-- The closed Cooline control previews the active font without touching
+	-- Blizzard's shared global dropdown list buttons.
 	selectedText = getglobal(dropdown:GetName() .. "Text")
 	SetFontStringFont(selectedText, key, 12)
 end
 
-local function SetFontFromDropdown()
+local function RefreshFontPopup()
+	local current
+	local i
+	local button
+
+	if not fontPopup or not fontPopup.buttons then return end
+
+	current = GetFontKey()
+	for i = 1, table.getn(fontPopup.buttons) do
+		button = fontPopup.buttons[i]
+		if button.entryKey == current then
+			button.check:Show()
+		else
+			button.check:Hide()
+		end
+	end
+end
+
+local function SelectFont(key)
 	local visuals = GetVisuals()
-	local key = this and this.value
 	if not visuals or not key then return end
 
 	visuals.barfont = GetFontEntry(key).key
 	ApplyTimelineFont()
 	UpdateDropdown()
+	RefreshFontPopup()
+
+	if fontPopup then
+		fontPopup:Hide()
+	end
 end
 
-local function InitializeFontDropdown()
-	local current = GetFontKey()
-	local level = UIDROPDOWNMENU_MENU_LEVEL or 1
-	local list = getglobal("DropDownList" .. level)
+local function BuildFontPopup()
+	local selectedText
 	local i
 	local entry
-	local info
 	local button
-	local fontString
+	local text
+	local check
+	local rowHeight = 20
+
+	if fontPopup or not dropdown then return end
+
+	selectedText = getglobal(dropdown:GetName() .. "Text")
+	fontPopup = CreateFrame("Frame", "CoolineBarFontPopup", dropdown)
+	fontPopup:SetWidth(190)
+	fontPopup:SetHeight((table.getn(FONT_CHOICES) * rowHeight) + 12)
+	fontPopup:SetFrameLevel(dropdown:GetFrameLevel() + 20)
+	fontPopup:SetBackdrop({
+		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
+		edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
+		tile = true,
+		tileSize = 16,
+		edgeSize = 16,
+		insets = { left = 3, right = 3, top = 3, bottom = 3 },
+	})
+	fontPopup:SetBackdropColor(0, 0, 0, 0.95)
+	fontPopup:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+	fontPopup.buttons = {}
+
+	if selectedText then
+		fontPopup:SetPoint("TOPLEFT", selectedText, "BOTTOMLEFT", -8, -5)
+	else
+		fontPopup:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 25, 5)
+	end
 
 	for i = 1, table.getn(FONT_CHOICES) do
 		entry = FONT_CHOICES[i]
-		if UIDropDownMenu_CreateInfo then
-			info = UIDropDownMenu_CreateInfo()
-		else
-			info = {}
-		end
-		info.text = entry.name
-		info.value = entry.key
-		info.func = SetFontFromDropdown
-		info.checked = entry.key == current and 1 or nil
-		UIDropDownMenu_AddButton(info)
+		button = CreateFrame("Button", nil, fontPopup)
+		button:SetHeight(rowHeight)
+		button:SetPoint("TOPLEFT", fontPopup, "TOPLEFT", 6, -6 - ((i - 1) * rowHeight))
+		button:SetPoint("TOPRIGHT", fontPopup, "TOPRIGHT", -6, -6 - ((i - 1) * rowHeight))
+		button.entryKey = entry.key
+		button:SetHighlightTexture([[Interface\QuestFrame\UI-QuestTitleHighlight]], "ADD")
+		button:SetScript("OnClick", function()
+			SelectFont(this.entryKey)
+		end)
 
-		-- Blizzard reuses dropdown buttons. Apply the represented font after
-		-- the row has been populated so each option acts as its own preview.
-		if list and list.numButtons then
-			button = getglobal("DropDownList" .. level .. "Button" .. list.numButtons)
-			if button and button.GetFontString then
-				fontString = button:GetFontString()
-			else
-				fontString = nil
-			end
-			SetFontStringFont(fontString, entry.key, 12)
-		end
+		text = button:CreateFontString(nil, "OVERLAY")
+		text:SetPoint("LEFT", button, "LEFT", 8, 0)
+		text:SetPoint("RIGHT", button, "RIGHT", -24, 0)
+		text:SetJustifyH("LEFT")
+		text:SetText(entry.name)
+		SetFontStringFont(text, entry.key, 12)
+		button.text = text
+
+		check = button:CreateTexture(nil, "OVERLAY")
+		check:SetWidth(16)
+		check:SetHeight(16)
+		check:SetPoint("RIGHT", button, "RIGHT", -4, 0)
+		check:SetTexture([[Interface\Buttons\UI-CheckBox-Check]])
+		button.check = check
+
+		tinsert(fontPopup.buttons, button)
+	end
+
+	fontPopup:Hide()
+	RefreshFontPopup()
+end
+
+local function ToggleFontPopup()
+	BuildFontPopup()
+	if not fontPopup then return end
+
+	if fontPopup:IsShown() then
+		fontPopup:Hide()
+	else
+		RefreshFontPopup()
+		fontPopup:Show()
 	end
 end
 
@@ -210,6 +276,7 @@ local function BuildFontOption()
 	local options = getglobal("CoolineOptionsFrame")
 	local page
 	local label
+	local arrowButton
 
 	if dropdown or not options or not options.appearancePage then return end
 	page = options.appearancePage
@@ -221,12 +288,22 @@ local function BuildFontOption()
 	label:SetText(L("Bar Font"))
 
 	dropdown = CreateFrame("Frame", "CoolineBarFontDropDown", page, "UIDropDownMenuTemplate")
-	-- The template text is inset from the frame. This aligns the visible
-	-- dropdown text with the x=244 control column used by the rows above.
+	-- Keep the familiar Vanilla closed dropdown shell, but do not initialize
+	-- Blizzard's shared dropdown menu. Cooline owns the opened font list.
 	dropdown:SetPoint("TOPLEFT", page, "TOPLEFT", 219, -594)
 	UIDropDownMenu_SetWidth(180, dropdown)
-	UIDropDownMenu_Initialize(dropdown, InitializeFontDropdown)
 	UpdateDropdown()
+
+	arrowButton = getglobal(dropdown:GetName() .. "Button")
+	if arrowButton then
+		arrowButton:SetScript("OnClick", ToggleFontPopup)
+	end
+
+	dropdown:SetScript("OnHide", function()
+		if fontPopup then
+			fontPopup:Hide()
+		end
+	end)
 end
 
 local function ClampAlpha(value)
@@ -323,6 +400,7 @@ driver:SetScript("OnUpdate", function()
 	if key ~= lastFontKey then
 		ApplyTimelineFont()
 		UpdateDropdown()
+		RefreshFontPopup()
 	end
 
 	syncElapsed = syncElapsed + arg1
