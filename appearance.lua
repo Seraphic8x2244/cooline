@@ -157,6 +157,8 @@ local function BuildLabelOverlay()
 			label:SetTextColor(1, 1, 1, 0.8)
 			label:SetShadowColor(0, 0, 0, 0.5)
 			label:SetShadowOffset(1, -1)
+			-- Vanilla 1.12 requires a font before SetText() on a new FontString.
+			ApplyFont(label, GetFontPath(GetFontKey()), 10)
 			label:SetText(data.frame:GetText() or "")
 			tinsert(overlay.labels, label)
 
