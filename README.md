@@ -1,4 +1,4 @@
-# Cooline 1.9.15
+# Cooline 1.9.16
 
 A lightweight cooldown timeline addon for **World of Warcraft 1.12.1**, based on the original [Cooline by shirsig](https://github.com/shirsig/cooline).
 
@@ -25,6 +25,7 @@ This fork intends to keep the genuinely excellent base behaviour, but has been c
 - Timeline font selection updates the actual bar labels immediately; Client Default follows the active Blizzard GameFont
 - Font previews use a Cooline-owned popup and no longer modify Blizzard's shared dropdown menu buttons
 - Cooldown icons render above the bar but below the timeline labels
+- Vanilla 1.12 FontStrings are assigned a font before text is set
 - Opacity values are clamped to valid 0-100% values
 - Minimap button to access options
 - Bar lockable
