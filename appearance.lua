@@ -10,7 +10,7 @@ local FONT_CHOICES = {
 	{ key = "friz", name = "Friz Quadrata", path = [[Fonts\FRIZQT__.TTF]] },
 	{ key = "arial", name = "Arial Narrow", path = [[Fonts\ARIALN.TTF]] },
 	{ key = "morpheus", name = "Morpheus", path = [[Fonts\MORPHEUS.TTF]] },
-	{ key = "skurri", name = "Skurri", path = [[Fonts\SKURRI.TTF]] },
+	{ key = "skurri", name = "Skurri", path = [[Fonts\skurri.ttf]] },
 }
 
 local function GetVisuals()
@@ -245,8 +245,8 @@ end
 local driver = CreateFrame("Frame")
 driver:RegisterEvent("VARIABLES_LOADED")
 driver:SetScript("OnEvent", function()
-	if event == "VARIABLES_LOADED" then
-		Setup()
+	if event == "VARIABLES_LOADED" and Setup() then
+		this:UnregisterEvent("VARIABLES_LOADED")
 	end
 end)
 driver:SetScript("OnUpdate", function()
