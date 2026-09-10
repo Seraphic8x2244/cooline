@@ -242,8 +242,8 @@ local function BuildFontPopup()
 		text:SetPoint("LEFT", button, "LEFT", 8, 0)
 		text:SetPoint("RIGHT", button, "RIGHT", -24, 0)
 		text:SetJustifyH("LEFT")
-		text:SetText(entry.name)
 		SetFontStringFont(text, entry.key, 12)
+		text:SetText(entry.name)
 		button.text = text
 
 		check = button:CreateTexture(nil, "OVERLAY")
