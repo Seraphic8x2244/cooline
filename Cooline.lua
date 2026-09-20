@@ -1275,11 +1275,17 @@ local function MakeText(parent, text, x, y, size, title)
 	fs:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
 	fs:SetFont(GetClientDefaultFont(), size or 11)
 	if title then
-		fs:SetTextColor(unpack(HIGHLIGHT_TEXT_COLOR))
+		fs:SetTextColor(1, 0.82, 0)
 	else
 		fs:SetTextColor(0.9, 0.9, 0.9)
 	end
 	fs:SetText(L(text or ""))
+	return fs
+end
+
+local function MakeHighlightText(parent, text, x, y, size)
+	local fs = MakeText(parent, text, x, y, size, false)
+	fs:SetTextColor(unpack(HIGHLIGHT_TEXT_COLOR))
 	return fs
 end
 
@@ -2154,7 +2160,7 @@ local function BuildOptionsShell()
 	optionsFrame.headerIcon:SetTexture([[Interface\Icons\INV_Qiraj_JewelGlyphed]])
 	optionsFrame.headerIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-	MakeText(optionsFrame, "Cooline", 50, -16, 14, true)
+	MakeHighlightText(optionsFrame, "Cooline", 50, -16, 14)
 	MakeText(optionsFrame, "v" .. ADDON_VERSION, 107, -18, 10, false)
 
 	optionsFrame.lockBar = MakeCheckbox(optionsFrame, "Lock Bar", 245, -12)
@@ -2196,7 +2202,7 @@ local function BuildAppearancePage()
 	page:SetAllPoints(optionsFrame.panel)
 	optionsFrame.appearancePage = page
 
-	MakeText(page, "Appearance", 18, -18, 14, true)
+	MakeHighlightText(page, "Appearance", 18, -18, 14)
 	optionsFrame.scope = MakeBinarySlider(page, "Account Wide", "Per Character", 360, -20, 42)
 
 	MakeText(page, "Style", 18, -50, 12, true)
@@ -2261,7 +2267,7 @@ local function BuildSpellsPage()
 	spells:Hide()
 	optionsFrame.spellsPage = spells
 
-	MakeText(spells, "Spells", 18, -18, 14, true)
+	MakeHighlightText(spells, "Spells", 18, -18, 14)
 
 	MakeText(spells, "Icon Size", 18, -54, 12, true)
 	optionsFrame.spellIconOverrideCheck = MakeCheckbox(
@@ -2431,7 +2437,7 @@ local function BuildItemsPage()
 	items:Hide()
 	optionsFrame.itemsPage = items
 
-	MakeText(items, "Items", 18, -18, 14, true)
+	MakeHighlightText(items, "Items", 18, -18, 14)
 
 	MakeText(items, "Icon Size", 18, -54, 12, true)
 	optionsFrame.itemIconOverrideCheck = MakeCheckbox(
