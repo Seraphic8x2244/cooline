@@ -26,8 +26,10 @@
 - Static audit confirms no writes to Blizzard shared `DropDownList...Button` font rows remain.
 - Static audit confirms no post-hoc localization walker or appearance polling driver remains.
 - Client Default bar-font inheritance was user-confirmed before migration.
+- User reports the migrated `1.9.18-dev` build looks good in-game; full checklist items not individually confirmed remain tracked below.
 
 ## Implemented / Awaiting Test
+- Options highlight text now uses Qiraji-gem mid blue `#2982D1` (`0.16, 0.51, 0.82`) for the Cooline name and section headers; tabs/borders/buttons retain their existing gold accents.
 - Timeline labels are created directly on a dedicated HIGH-strata Cooline overlay; cooldown icons remain in the normal bar hierarchy.
 - Font selection is integrated directly into `Cooline.lua` with a Cooline-owned preview popup.
 - Locale-scoped spell/item filter migration is integrated into settings initialization.
@@ -78,4 +80,4 @@
 - Any Debug.lua tooling until a concrete debugging need appears.
 
 ## Exact Next Step
-Install/test `1.9.18-dev` from `dev`; first confirm there are no Lua errors and that cooldown icons sit behind the timeline numbers. If those pass, continue through the regression checklist before beginning the Spells/Items layout work.
+Reload/test the new Qiraji-blue header colour on `1.9.18-dev`. If the tone is approved, continue the remaining regression checklist before beginning the Spells/Items layout work.
