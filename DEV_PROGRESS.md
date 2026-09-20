@@ -17,7 +17,7 @@
 - Active development now uses the `dev` branch.
 - `DEV_GUIDE.md` matches VanillaTemplate.
 - `DEV_PROGRESS.md` is present for handoff/status tracking.
-- Dev TOC is the version source and reports `Cooline-dev` / `1.9.18-dev`.
+- Dev TOC is the version source and reports a Qiraji-blue `Cooline` name with normal `-dev` suffix / `1.9.18-dev`.
 - Addon files are normalized to `Cooline.toc` and `Cooline.lua`.
 - SavedVariables remain `CoolineDB` and `CoolineCharDB`.
 - Locale files are split into `locales/enUS.lua` plus deDE, frFR, esES, koKR, zhCN and zhTW overrides.
@@ -29,7 +29,7 @@
 - User reports the migrated `1.9.18-dev` build looks good in-game; full checklist items not individually confirmed remain tracked below.
 
 ## Implemented / Awaiting Test
-- Options highlight text uses Qiraji-gem mid blue `#2982D1` (`0.16, 0.51, 0.82`) only for the `Cooline` addon name; all page headers, subheaders, tabs, borders and buttons retain their existing gold/normal colours.
+- Qiraji-gem mid blue `#2982D1` (`0.16, 0.51, 0.82`) is used only for the `Cooline` addon name in the options header and addon-list TOC title; all page headers, subheaders, tabs, borders, buttons and the `-dev` suffix retain their existing gold/normal colours.
 - Timeline labels are created directly on a dedicated HIGH-strata Cooline overlay; cooldown icons remain in the normal bar hierarchy.
 - Font selection is integrated directly into `Cooline.lua` with a Cooline-owned preview popup.
 - Locale-scoped spell/item filter migration is integrated into settings initialization.
