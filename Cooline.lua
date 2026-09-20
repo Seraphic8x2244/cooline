@@ -2202,7 +2202,7 @@ local function BuildAppearancePage()
 	page:SetAllPoints(optionsFrame.panel)
 	optionsFrame.appearancePage = page
 
-	MakeHighlightText(page, "Appearance", 18, -18, 14)
+	MakeText(page, "Appearance", 18, -18, 14, true)
 	optionsFrame.scope = MakeBinarySlider(page, "Account Wide", "Per Character", 360, -20, 42)
 
 	MakeText(page, "Style", 18, -50, 12, true)
@@ -2267,7 +2267,7 @@ local function BuildSpellsPage()
 	spells:Hide()
 	optionsFrame.spellsPage = spells
 
-	MakeHighlightText(spells, "Spells", 18, -18, 14)
+	MakeText(spells, "Spells", 18, -18, 14, true)
 
 	MakeText(spells, "Icon Size", 18, -54, 12, true)
 	optionsFrame.spellIconOverrideCheck = MakeCheckbox(
@@ -2437,7 +2437,7 @@ local function BuildItemsPage()
 	items:Hide()
 	optionsFrame.itemsPage = items
 
-	MakeHighlightText(items, "Items", 18, -18, 14)
+	MakeText(items, "Items", 18, -18, 14, true)
 
 	MakeText(items, "Icon Size", 18, -54, 12, true)
 	optionsFrame.itemIconOverrideCheck = MakeCheckbox(
