@@ -1,5 +1,5 @@
 ## Interface: 11200
-## Title: Cooline-dev
+## Title: |cff2982d1Cooline|r-dev
 ## Author: Seraphic8x2244
 ## Version: 1.9.18-dev
 ## SavedVariables: CoolineDB
