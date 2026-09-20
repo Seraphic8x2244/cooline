@@ -1,0 +1,15 @@
+## Interface: 11200
+## Title: Cooline-dev
+## Author: Seraphic8x2244
+## Version: 1.9.18-dev
+## SavedVariables: CoolineDB
+## SavedVariablesPerCharacter: CoolineCharDB
+
+locales\enUS.lua
+locales\deDE.lua
+locales\frFR.lua
+locales\esES.lua
+locales\koKR.lua
+locales\zhCN.lua
+locales\zhTW.lua
+Cooline.lua

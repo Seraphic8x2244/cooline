@@ -1,4 +1,4 @@
-# Cooline 1.9.17
+# Cooline
 
 A lightweight cooldown timeline addon for **World of Warcraft 1.12.1**, based on the original [Cooline by shirsig](https://github.com/shirsig/cooline).
 
@@ -33,9 +33,9 @@ This fork intends to keep the genuinely excellent base behaviour, but has been c
 - A few basic skins to start with
 - Configurable animation when casting a spell on cooldown
 
-## Version
+## Development
 
-The 1.9.x series is intended for development and testing. Once the redesigned addon is stable, it will become **Cooline 2.0.0**.
+Active development follows the VanillaTemplate workflow on the `dev` branch. Development versions use a `-dev` suffix and are promoted to a stable release only after explicit in-game verification.
 
 ## Compatibility
 

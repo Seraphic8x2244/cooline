@@ -1,4 +1,7 @@
-local VERSION = GetAddOnMetadata("Cooline", "Version") or "Unknown"
+local ADDON_NAME = "Cooline"
+local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version") or "Unknown"
+local L = CoolineLocale and CoolineLocale.Text or function(text) return text end
+local locale = CoolineLocale and CoolineLocale.GetLocale and CoolineLocale.GetLocale() or (GetLocale and GetLocale()) or "enUS"
 
 local DEFAULTS = {
 	length = 360,
@@ -12,6 +15,7 @@ local DEFAULTS = {
 	inactivealpha = 0.5,
 	activealpha = 1.0,
 	cooldownanimate = 150,
+	barfont = "default",
 }
 
 local STYLE_PRESETS = {
@@ -91,6 +95,110 @@ local function ApplyDefaults(target, defaults)
 	end
 end
 
+
+local FONT_CHOICES = {
+	{ key = "default", name = L("Client Default") },
+	{ key = "friz", name = L("Friz Quadrata"), path = [[Fonts\FRIZQT__.TTF]] },
+	{ key = "arial", name = L("Arial Narrow"), path = [[Fonts\ARIALN.TTF]] },
+	{ key = "morpheus", name = L("Morpheus"), path = [[Fonts\MORPHEUS.TTF]] },
+	{ key = "skurri", name = L("Skurri"), path = [[Fonts\skurri.ttf]] },
+}
+
+local function NewFilter()
+	return {
+		mode = "blacklist",
+		blacklist = {},
+		whitelist = {},
+	}
+end
+
+local function ScopeFiltersByLocale()
+	if not CoolineCharDB then return end
+
+	if not CoolineCharDB.filtersByLocale then
+		CoolineCharDB.filtersByLocale = {}
+		CoolineCharDB.filtersByLocale[locale] = CoolineCharDB.filters or NewFilter()
+	end
+	if not CoolineCharDB.filtersByLocale[locale] then
+		CoolineCharDB.filtersByLocale[locale] = NewFilter()
+	end
+	CoolineCharDB.filters = CoolineCharDB.filtersByLocale[locale]
+
+	if not CoolineCharDB.itemFiltersByLocale then
+		CoolineCharDB.itemFiltersByLocale = {}
+		CoolineCharDB.itemFiltersByLocale[locale] = CoolineCharDB.itemFilters or NewFilter()
+	end
+	if not CoolineCharDB.itemFiltersByLocale[locale] then
+		CoolineCharDB.itemFiltersByLocale[locale] = NewFilter()
+	end
+	CoolineCharDB.itemFilters = CoolineCharDB.itemFiltersByLocale[locale]
+end
+
+local function ClampUnitAlpha(value, fallback)
+	value = tonumber(value)
+	if value == nil then return fallback end
+	if value < 0 then return 0 end
+	if value > 1 then return 1 end
+	return value
+end
+
+local function GetClientDefaultFont()
+	local path
+
+	if GameFontNormal and GameFontNormal.GetFont then
+		path = GameFontNormal:GetFont()
+	end
+
+	return path or STANDARD_TEXT_FONT or [[Fonts\FRIZQT__.TTF]]
+end
+
+local function GetFontEntry(key)
+	local i
+	for i = 1, table.getn(FONT_CHOICES) do
+		if FONT_CHOICES[i].key == key then
+			return FONT_CHOICES[i]
+		end
+	end
+	return FONT_CHOICES[1]
+end
+
+local function GetFontPath(key)
+	local entry = GetFontEntry(key)
+	return entry.path or GetClientDefaultFont()
+end
+
+local function ApplyFont(fontString, path, size)
+	if not fontString or not fontString.SetFont then return end
+
+	fontString:SetFont(path, size)
+	if not fontString:GetFont() then
+		fontString:SetFont(GetClientDefaultFont(), size)
+	end
+end
+
+local function NormalizeVisuals(target)
+	if not target then return end
+	target.activealpha = ClampUnitAlpha(target.activealpha, 1)
+	target.inactivealpha = ClampUnitAlpha(target.inactivealpha, 0.5)
+	target.barfont = GetFontEntry(target.barfont or "default").key
+end
+
+local function ApplyBarFont()
+	local i
+	local data
+	local path
+
+	if not visuals or not bar or not bar.labels then return end
+
+	path = GetFontPath(visuals.barfont or "default")
+	for i = 1, table.getn(bar.labels) do
+		data = bar.labels[i]
+		if data and data.frame then
+			ApplyFont(data.frame, path, 10)
+		end
+	end
+end
+
 local function InitialiseSettings()
 	CoolineDB = CoolineDB or {}
 	CoolineDB.visuals = CoolineDB.visuals or {}
@@ -117,6 +225,7 @@ local function InitialiseSettings()
 	end
 
 	ApplyDefaults(CoolineDB.visuals, DEFAULTS)
+	NormalizeVisuals(CoolineDB.visuals)
 
 	CoolineCharDB = CoolineCharDB or {}
 	if CoolineCharDB.useCharacterVisuals == nil then
@@ -126,6 +235,8 @@ local function InitialiseSettings()
 	if CoolineCharDB.locked == nil then
 		CoolineCharDB.locked = false
 	end
+
+	ScopeFiltersByLocale()
 
 	CoolineCharDB.filters = CoolineCharDB.filters or {}
 	if CoolineCharDB.filters.mode == nil then
@@ -170,6 +281,7 @@ local function InitialiseSettings()
 		end
 
 		ApplyDefaults(CoolineCharDB.visuals, CoolineDB.visuals)
+		NormalizeVisuals(CoolineCharDB.visuals)
 		visuals = CoolineCharDB.visuals
 	else
 		visuals = CoolineDB.visuals
@@ -183,6 +295,7 @@ local function SelectVisualScope(useCharacter)
 			ApplyDefaults(CoolineCharDB.visuals, CoolineDB.visuals)
 		end
 		ApplyDefaults(CoolineCharDB.visuals, DEFAULTS)
+		NormalizeVisuals(CoolineCharDB.visuals)
 		CoolineCharDB.useCharacterVisuals = true
 		visuals = CoolineCharDB.visuals
 	else
@@ -625,9 +738,9 @@ local function BuildMinimapButton()
 	minimapButton:SetScript("OnEnter", function()
 		GameTooltip:SetOwner(this, "ANCHOR_LEFT")
 		GameTooltip:AddLine("Cooline", 1, 0.82, 0)
-		GameTooltip:AddLine("Left-click: Options", 1, 1, 1)
-		GameTooltip:AddLine("Right-click: Lock / Unlock", 1, 1, 1)
-		GameTooltip:AddLine("Drag: Move button", 1, 1, 1)
+		GameTooltip:AddLine(L("Left-click: Options"), 1, 1, 1)
+		GameTooltip:AddLine(L("Right-click: Lock / Unlock"), 1, 1, 1)
+		GameTooltip:AddLine(L("Drag: Move button"), 1, 1, 1)
 		GameTooltip:Show()
 	end)
 
@@ -667,11 +780,18 @@ local function BuildBar()
 
 	bar.border = CreateFrame("Frame", nil, bar)
 
+	-- Timeline text lives on a dedicated higher strata so cooldown icons remain
+	-- above the bar itself but can never cover the timeline labels.
+	bar.labelOverlay = CreateFrame("Frame", nil, UIParent)
+	bar.labelOverlay:SetAllPoints(bar)
+	bar.labelOverlay:SetFrameStrata("HIGH")
+	bar.labelOverlay:SetFrameLevel(1)
+
 	bar.labels = {}
 
 	for i, data in ipairs(labels) do
-		fs = bar:CreateFontString(nil, "OVERLAY")
-		fs:SetFont([[Fonts\FRIZQT__.TTF]], 10)
+		fs = bar.labelOverlay:CreateFontString(nil, "OVERLAY")
+		ApplyFont(fs, GetFontPath(visuals.barfont or "default"), 10)
 		fs:SetTextColor(1, 1, 1, 0.8)
 		fs:SetShadowColor(0, 0, 0, 0.5)
 		fs:SetShadowOffset(1, -1)
@@ -736,6 +856,52 @@ GetSpellCount = function()
 	end
 
 	return highest
+end
+
+
+local function FindFailedSpellName(message)
+	local _, _, failedSpell
+	local count
+	local now
+	local bestName
+	local bestLength = 0
+	local i
+	local name
+	local startTime
+	local duration
+	local enabled
+
+	message = message or ""
+
+	-- Preserve the exact native English path where the combat message grammar
+	-- is known, then use spellbook matching for localized clients.
+	if locale == "enUS" or locale == "enGB" then
+		_, _, failedSpell = strfind(
+			message,
+			"^You fail to [^ ]+ (.+): Not yet recovered%.$"
+		)
+		if failedSpell then
+			return failedSpell
+		end
+	end
+
+	count = GetSpellCount and GetSpellCount() or 0
+	now = GetTime()
+
+	for i = 1, count do
+		name = GetSpellName(i, BOOKTYPE_SPELL)
+		if name and string.find(message, name, 1, true) then
+			startTime, duration, enabled = GetSpellCooldown(i, BOOKTYPE_SPELL)
+			if enabled == 1 and duration and duration > 2.5 and
+			   startTime and (startTime + duration) > now and
+			   string.len(name) > bestLength then
+				bestName = name
+				bestLength = string.len(name)
+			end
+		end
+	end
+
+	return bestName
 end
 
 local function EnsureCooldown(key)
@@ -1096,6 +1262,8 @@ end
 -- ============================================================================
 
 local RefreshAppearanceOptions
+local fontDropdown
+local fontPopup
 local sliderCount = 0
 local FILTER_ROW_HEIGHT = 28
 local SPELL_VISIBLE_ROWS = 7
@@ -1104,13 +1272,13 @@ local ITEM_VISIBLE_ROWS = 7
 local function MakeText(parent, text, x, y, size, title)
 	local fs = parent:CreateFontString(nil, "OVERLAY")
 	fs:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-	fs:SetFont([[Fonts\FRIZQT__.TTF]], size or 11)
+	fs:SetFont(GetClientDefaultFont(), size or 11)
 	if title then
 		fs:SetTextColor(1, 0.82, 0)
 	else
 		fs:SetTextColor(0.9, 0.9, 0.9)
 	end
-	fs:SetText(text or "")
+	fs:SetText(L(text or ""))
 	return fs
 end
 
@@ -1118,7 +1286,7 @@ local function MakeButton(parent, text, width)
 	local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
 	button:SetWidth(width)
 	button:SetHeight(22)
-	button:SetText(text)
+	button:SetText(L(text))
 	return button
 end
 
@@ -1144,15 +1312,15 @@ local function MakeBinarySlider(parent, leftText, rightText, x, y, width)
 
 	left = parent:CreateFontString(nil, "OVERLAY")
 	left:SetPoint("RIGHT", slider, "LEFT", -12, 0)
-	left:SetFont([[Fonts\FRIZQT__.TTF]], 11)
+	left:SetFont(GetClientDefaultFont(), 11)
 	left:SetTextColor(0.9, 0.9, 0.9)
-	left:SetText(leftText)
+	left:SetText(L(leftText))
 
 	right = parent:CreateFontString(nil, "OVERLAY")
 	right:SetPoint("LEFT", slider, "RIGHT", 12, 0)
-	right:SetFont([[Fonts\FRIZQT__.TTF]], 11)
+	right:SetFont(GetClientDefaultFont(), 11)
 	right:SetTextColor(0.9, 0.9, 0.9)
-	right:SetText(rightText)
+	right:SetText(L(rightText))
 
 	return slider
 end
@@ -1168,9 +1336,9 @@ local function MakeCheckbox(parent, text, x, y)
 
 	label = check:CreateFontString(nil, "OVERLAY")
 	label:SetPoint("LEFT", check, "RIGHT", 2, 1)
-	label:SetFont([[Fonts\FRIZQT__.TTF]], 11)
+	label:SetFont(GetClientDefaultFont(), 11)
 	label:SetTextColor(0.9, 0.9, 0.9)
-	label:SetText(text)
+	label:SetText(L(text))
 	check.label = label
 
 	return check
@@ -1286,9 +1454,9 @@ local function MakeStylePreview(parent, styleKey, x, y)
 
 	label = button:CreateFontString(nil, "OVERLAY")
 	label:SetPoint("BOTTOM", button, "BOTTOM", 0, 5)
-	label:SetFont([[Fonts\FRIZQT__.TTF]], 10)
+	label:SetFont(GetClientDefaultFont(), 10)
 	label:SetTextColor(0.9, 0.9, 0.9)
-	label:SetText(style.name)
+	label:SetText(L(style.name))
 
 	button.styleKey = styleKey
 
@@ -1370,6 +1538,155 @@ local function ReadInteger(edit, minimum)
 	return value
 end
 
+
+local function UpdateFontDropdown()
+	local key
+	local entry
+	local selectedText
+
+	if not fontDropdown or not visuals then return end
+
+	key = GetFontEntry(visuals.barfont or "default").key
+	entry = GetFontEntry(key)
+	UIDropDownMenu_SetText(entry.name, fontDropdown)
+
+	selectedText = getglobal(fontDropdown:GetName() .. "Text")
+	ApplyFont(selectedText, GetFontPath(key), 12)
+end
+
+local function RefreshFontPopup()
+	local current
+	local i
+	local button
+
+	if not fontPopup or not fontPopup.buttons or not visuals then return end
+
+	current = GetFontEntry(visuals.barfont or "default").key
+	for i = 1, table.getn(fontPopup.buttons) do
+		button = fontPopup.buttons[i]
+		if button.entryKey == current then
+			button.check:Show()
+		else
+			button.check:Hide()
+		end
+	end
+end
+
+local function SelectBarFont(key)
+	if not visuals or not key then return end
+
+	visuals.barfont = GetFontEntry(key).key
+	ApplyBarFont()
+	UpdateFontDropdown()
+	RefreshFontPopup()
+
+	if fontPopup then
+		fontPopup:Hide()
+	end
+end
+
+local function BuildFontPopup()
+	local selectedText
+	local i
+	local entry
+	local button
+	local text
+	local check
+	local rowHeight = 20
+
+	if fontPopup or not fontDropdown then return end
+
+	selectedText = getglobal(fontDropdown:GetName() .. "Text")
+	fontPopup = CreateFrame("Frame", "CoolineBarFontPopup", fontDropdown)
+	fontPopup:SetWidth(190)
+	fontPopup:SetHeight((table.getn(FONT_CHOICES) * rowHeight) + 12)
+	fontPopup:SetFrameLevel(fontDropdown:GetFrameLevel() + 20)
+	fontPopup:SetBackdrop({
+		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
+		edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
+		tile = true,
+		tileSize = 16,
+		edgeSize = 16,
+		insets = { left = 3, right = 3, top = 3, bottom = 3 },
+	})
+	fontPopup:SetBackdropColor(0, 0, 0, 0.95)
+	fontPopup:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+	fontPopup.buttons = {}
+
+	if selectedText then
+		fontPopup:SetPoint("TOPLEFT", selectedText, "BOTTOMLEFT", -8, -5)
+	else
+		fontPopup:SetPoint("TOPLEFT", fontDropdown, "BOTTOMLEFT", 25, 5)
+	end
+
+	for i = 1, table.getn(FONT_CHOICES) do
+		entry = FONT_CHOICES[i]
+		button = CreateFrame("Button", nil, fontPopup)
+		button:SetHeight(rowHeight)
+		button:SetPoint("TOPLEFT", fontPopup, "TOPLEFT", 6, -6 - ((i - 1) * rowHeight))
+		button:SetPoint("TOPRIGHT", fontPopup, "TOPRIGHT", -6, -6 - ((i - 1) * rowHeight))
+		button.entryKey = entry.key
+		button:SetHighlightTexture([[Interface\QuestFrame\UI-QuestTitleHighlight]], "ADD")
+		button:SetScript("OnClick", function()
+			SelectBarFont(this.entryKey)
+		end)
+
+		text = button:CreateFontString(nil, "OVERLAY")
+		text:SetPoint("LEFT", button, "LEFT", 8, 0)
+		text:SetPoint("RIGHT", button, "RIGHT", -24, 0)
+		text:SetJustifyH("LEFT")
+		ApplyFont(text, GetFontPath(entry.key), 12)
+		text:SetText(entry.name)
+		button.text = text
+
+		check = button:CreateTexture(nil, "OVERLAY")
+		check:SetWidth(16)
+		check:SetHeight(16)
+		check:SetPoint("RIGHT", button, "RIGHT", -4, 0)
+		check:SetTexture([[Interface\Buttons\UI-CheckBox-Check]])
+		button.check = check
+
+		tinsert(fontPopup.buttons, button)
+	end
+
+	fontPopup:Hide()
+	RefreshFontPopup()
+end
+
+local function ToggleFontPopup()
+	BuildFontPopup()
+	if not fontPopup then return end
+
+	if fontPopup:IsShown() then
+		fontPopup:Hide()
+	else
+		RefreshFontPopup()
+		fontPopup:Show()
+	end
+end
+
+local function BuildFontSelector(page)
+	local arrowButton
+
+	MakeText(page, "Bar Font", 28, -610, 11, false)
+
+	fontDropdown = CreateFrame("Frame", "CoolineBarFontDropDown", page, "UIDropDownMenuTemplate")
+	fontDropdown:SetPoint("TOPLEFT", page, "TOPLEFT", 219, -594)
+	UIDropDownMenu_SetWidth(180, fontDropdown)
+	UpdateFontDropdown()
+
+	arrowButton = getglobal(fontDropdown:GetName() .. "Button")
+	if arrowButton then
+		arrowButton:SetScript("OnClick", ToggleFontPopup)
+	end
+
+	fontDropdown:SetScript("OnHide", function()
+		if fontPopup then
+			fontPopup:Hide()
+		end
+	end)
+end
+
 RefreshAppearanceOptions = function()
 	if not optionsFrame then return end
 
@@ -1401,6 +1718,7 @@ RefreshAppearanceOptions = function()
 	optionsFrame.active.edit:SetText(active .. "%")
 	optionsFrame.inactive:SetValue(min(inactive, 100))
 	optionsFrame.inactive.edit:SetText(inactive .. "%")
+	UpdateFontDropdown()
 
 	local animate = visuals.cooldownanimate or 150
 	optionsFrame.cooldownAnimate:SetValue(min(max(animate, 100), 200))
@@ -1773,9 +2091,9 @@ local function MakeTab(parent, text, width)
 
 	label = tab:CreateFontString(nil, "OVERLAY")
 	label:SetPoint("CENTER", tab, "CENTER", 0, 0)
-	label:SetFont([[Fonts\FRIZQT__.TTF]], 11)
+	label:SetFont(GetClientDefaultFont(), 11)
 	label:SetTextColor(1, 0.82, 0)
-	label:SetText(text)
+	label:SetText(L(text))
 	tab.label = label
 
 	return tab
@@ -1836,7 +2154,7 @@ local function BuildOptionsShell()
 	optionsFrame.headerIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
 	MakeText(optionsFrame, "Cooline", 50, -16, 14, true)
-	MakeText(optionsFrame, "v" .. VERSION, 107, -18, 10, false)
+	MakeText(optionsFrame, "v" .. ADDON_VERSION, 107, -18, 10, false)
 
 	optionsFrame.lockBar = MakeCheckbox(optionsFrame, "Lock Bar", 245, -12)
 	optionsFrame.minimapToggle = MakeCheckbox(
@@ -1932,6 +2250,8 @@ local function BuildAppearancePage()
 	optionsFrame.inactive = MakeRowValueSlider(
 		page, 244, -557, 170, 0, 100, 10
 	)
+
+	BuildFontSelector(page)
 end
 
 local function BuildSpellsPage()
@@ -2004,7 +2324,7 @@ local function BuildSpellsPage()
 		row.name:SetWidth(320)
 		row.name:SetHeight(22)
 		row.name:SetJustifyH("LEFT")
-		row.name:SetFont([[Fonts\FRIZQT__.TTF]], 11)
+		row.name:SetFont(GetClientDefaultFont(), 11)
 		row.name:SetTextColor(0.9, 0.9, 0.9)
 
 		row.remove = MakeButton(row, "X", 24)
@@ -2174,7 +2494,7 @@ local function BuildItemsPage()
 		row.name:SetWidth(320)
 		row.name:SetHeight(22)
 		row.name:SetJustifyH("LEFT")
-		row.name:SetFont([[Fonts\FRIZQT__.TTF]], 11)
+		row.name:SetFont(GetClientDefaultFont(), 11)
 		row.name:SetTextColor(0.9, 0.9, 0.9)
 
 		row.remove = MakeButton(row, "X", 24)
@@ -2387,6 +2707,7 @@ local function BindAppearanceScripts()
 		if optionsFrame.updating then return end
 		SelectVisualScope(this:GetValue() >= 0.5)
 		ApplyVisualLayout()
+		ApplyBarFont()
 		RefreshAppearanceOptions()
 	end)
 
@@ -2484,9 +2805,10 @@ local function BindAppearanceScripts()
 		if not value then RefreshAppearanceOptions() return end
 		value = floor(value + 0.5)
 		if value < 0 then value = 0 end
+		if value > 100 then value = 100 end
 		visuals.activealpha = value / 100
 		optionsFrame.updating = true
-		optionsFrame.active:SetValue(min(value, 100))
+		optionsFrame.active:SetValue(value)
 		optionsFrame.updating = false
 		RefreshAppearanceOptions()
 	end)
@@ -2498,9 +2820,10 @@ local function BindAppearanceScripts()
 		if not value then RefreshAppearanceOptions() return end
 		value = floor(value + 0.5)
 		if value < 0 then value = 0 end
+		if value > 100 then value = 100 end
 		visuals.inactivealpha = value / 100
 		optionsFrame.updating = true
-		optionsFrame.inactive:SetValue(min(value, 100))
+		optionsFrame.inactive:SetValue(value)
 		optionsFrame.updating = false
 		RefreshAppearanceOptions()
 	end)
@@ -2565,7 +2888,7 @@ local function OnVariablesLoaded()
 	bar:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 	DEFAULT_CHAT_FRAME:AddMessage(
-		"|c00ffff00Cooline " .. VERSION .. " loaded.|r"
+		"|c00ffff00" .. string.format(L("Cooline %s loaded."), ADDON_VERSION) .. "|r"
 	)
 end
 
@@ -2575,14 +2898,7 @@ bar:SetScript("OnEvent", function()
 	if event == "VARIABLES_LOADED" then
 		OnVariablesLoaded()
 	elseif event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" and initialised then
-		-- Vanilla uses different verbs for different abilities, e.g.
-		-- "cast Blessing of Freedom" and "perform Shadowmeld".
-		-- Match the common failure structure rather than hard-coding the verb.
-		local _, _, failedSpell = strfind(
-			arg1 or "",
-			"^You fail to [^ ]+ (.+): Not yet recovered%.$"
-		)
-
+		local failedSpell = FindFailedSpellName(arg1)
 		if failedSpell then
 			TriggerCooldownPulse(failedSpell)
 		end

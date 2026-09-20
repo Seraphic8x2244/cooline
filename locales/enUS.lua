@@ -46,6 +46,10 @@ L["Client Default"] = "Client Default"
 L["Left-click: Options"] = "Left-click: Options"
 L["Right-click: Lock / Unlock"] = "Right-click: Lock / Unlock"
 L["Drag: Move button"] = "Drag: Move button"
+L["Friz Quadrata"] = "Friz Quadrata"
+L["Arial Narrow"] = "Arial Narrow"
+L["Morpheus"] = "Morpheus"
+L["Skurri"] = "Skurri"
 L["Cooline %s loaded."] = "Cooline %s loaded."
 
 function CoolineLocale.Text(text)
