@@ -29,7 +29,7 @@
 - User reports the migrated `1.9.18-dev` build looks good in-game; full checklist items not individually confirmed remain tracked below.
 
 ## Implemented / Awaiting Test
-- Options highlight text now uses Qiraji-gem mid blue `#2982D1` (`0.16, 0.51, 0.82`) for the Cooline name and section headers; tabs/borders/buttons retain their existing gold accents.
+- Options highlight text uses Qiraji-gem mid blue `#2982D1` (`0.16, 0.51, 0.82`) only for the Cooline addon name and the active page's primary header (`Appearance`, `Spells`, `Items`); section subheaders, tabs, borders and buttons retain their existing gold accents.
 - Timeline labels are created directly on a dedicated HIGH-strata Cooline overlay; cooldown icons remain in the normal bar hierarchy.
 - Font selection is integrated directly into `Cooline.lua` with a Cooline-owned preview popup.
 - Locale-scoped spell/item filter migration is integrated into settings initialization.
