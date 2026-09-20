@@ -3,9 +3,11 @@
 ## Current
 - Branch: `dev`
 - Version: `1.9.18-dev`
-- Goal: Stable 1.9.18 approved for promotion to `main`; retain `dev` for subsequent work.
+- Goal: Stable `1.9.18` is released on `main`; resume new development on `dev`.
 
 ## Recent Commits
+- Stable `main`: `e0ef4d5` - final 1.9.18 release cleanup.
+- `026736f` - Record Cooline 1.9.18 release approval on `dev`.
 - `7d2ffbc` - Migrate Cooline core to VanillaTemplate structure.
 - `1d7af96` - Add zhTW locale file (final per-locale split commit).
 - `0af6b47` - Add canonical enUS locale file.
@@ -14,6 +16,7 @@
 - Migration base: `932921c` - Cooline 1.9.17 timeline strata fix on legacy `master`.
 
 ## Completed / Verified
+- Stable `main` created and released as `1.9.18` with development-only docs removed and no `-dev` suffix.
 - Active development now uses the `dev` branch.
 - `DEV_GUIDE.md` matches VanillaTemplate.
 - `DEV_PROGRESS.md` is present for handoff/status tracking.
@@ -80,4 +83,4 @@
 - Any Debug.lua tooling until a concrete debugging need appears.
 
 ## Exact Next Step
-Promote the approved `1.9.18-dev` state to stable `main` as `1.9.18`, excluding development-only documentation; then resume new work on `dev`.
+Start the next development task from `dev`; the deferred Spells/Items options-panel re-layout is the next planned feature batch.
