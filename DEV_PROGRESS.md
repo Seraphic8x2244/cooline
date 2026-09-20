@@ -3,7 +3,7 @@
 ## Current
 - Branch: `dev`
 - Version: `1.9.18-dev`
-- Goal: Validate the completed VanillaTemplate workflow migration and preserve current Cooline behaviour before resuming feature work.
+- Goal: Stable 1.9.18 approved for promotion to `main`; retain `dev` for subsequent work.
 
 ## Recent Commits
 - `7d2ffbc` - Migrate Cooline core to VanillaTemplate structure.
@@ -80,4 +80,4 @@
 - Any Debug.lua tooling until a concrete debugging need appears.
 
 ## Exact Next Step
-Restart the WoW client and test the Qiraji-blue `Cooline` name on `1.9.18-dev`. If the tone is approved, continue the remaining regression checklist before beginning the Spells/Items layout work.
+Promote the approved `1.9.18-dev` state to stable `main` as `1.9.18`, excluding development-only documentation; then resume new work on `dev`.
