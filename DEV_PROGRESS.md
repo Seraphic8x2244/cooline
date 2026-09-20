@@ -3,51 +3,79 @@
 ## Current
 - Branch: `dev`
 - Version: `1.9.18-dev`
-- Goal: Migrate Cooline to the VanillaTemplate development workflow without changing intended addon behaviour.
+- Goal: Validate the completed VanillaTemplate workflow migration and preserve current Cooline behaviour before resuming feature work.
 
 ## Recent Commits
-- `932921c` - Document Cooline 1.9.17 timeline strata fix (migration base on `master`)
+- `7d2ffbc` - Migrate Cooline core to VanillaTemplate structure.
+- `1d7af96` - Add zhTW locale file (final per-locale split commit).
+- `0af6b47` - Add canonical enUS locale file.
+- `891af80` - Add Cooline development progress.
+- `e024836` - Add VanillaTemplate development guide.
+- Migration base: `932921c` - Cooline 1.9.17 timeline strata fix on legacy `master`.
 
 ## Completed / Verified
-- Existing Cooline 1.9.x feature work up to 1.9.17 is preserved as the migration baseline.
-- Client Default bar font inheritance was user-confirmed before migration.
-- Cooline-owned font popup no longer intentionally styles Blizzard shared dropdown rows.
+- Active development now uses the `dev` branch.
+- `DEV_GUIDE.md` matches VanillaTemplate.
+- `DEV_PROGRESS.md` is present for handoff/status tracking.
+- Dev TOC is the version source and reports `Cooline-dev` / `1.9.18-dev`.
+- Addon files are normalized to `Cooline.toc` and `Cooline.lua`.
+- SavedVariables remain `CoolineDB` and `CoolineCharDB`.
+- Locale files are split into `locales/enUS.lua` plus deDE, frFR, esES, koKR, zhCN and zhTW overrides.
+- `compat.lua`, `appearance.lua`, legacy `locales.lua`, and lowercase Lua/TOC files are removed from `dev`.
+- Static audit confirms every newly created FontString in the merged core has a font/font object before text is assigned.
+- Static audit confirms no writes to Blizzard shared `DropDownList...Button` font rows remain.
+- Static audit confirms no post-hoc localization walker or appearance polling driver remains.
+- Client Default bar-font inheritance was user-confirmed before migration.
 
 ## Implemented / Awaiting Test
-- Current 1.9.17 dedicated timeline text strata change still requires in-game verification.
-- Migration work in this branch is not yet complete.
+- Timeline labels are created directly on a dedicated HIGH-strata Cooline overlay; cooldown icons remain in the normal bar hierarchy.
+- Font selection is integrated directly into `Cooline.lua` with a Cooline-owned preview popup.
+- Locale-scoped spell/item filter migration is integrated into settings initialization.
+- Non-English cooldown-failure matching is integrated directly into the core event path instead of wrapping bar scripts.
+- Opacity SavedVariables and direct edit-box input are clamped at the source.
+- Custom Cooline UI FontStrings use the active client default font unless the timeline font option explicitly selects another font.
+- Full `1.9.18-dev` migration regression remains untested in-game.
 
 ## Current Issues
-- Workflow migration in progress.
-- Recent timeline text/icon draw-order behaviour is not yet user-verified.
+- No known static migration error.
+- Final timeline text-above-icons behaviour is still awaiting in-game confirmation.
+- Non-English client behaviour is not runtime-tested.
+- No Lua 5.0 compiler/client is available in the development environment; static inspection does not count as an in-game test.
 
 ## Testing
 
 ### Last Test
-- Version/commit: 1.9.17 / 932921c
+- Version/commit: pre-migration 1.9.17 line.
 - Passed: Client Default bar font inheritance.
-- Failed: Earlier frame-level-only attempts did not keep icons behind timeline text.
-- Not tested: Final 1.9.17 dedicated HIGH-strata timeline overlay.
+- Failed: Earlier frame-level-only text layering attempts before the dedicated HIGH-strata implementation.
+- Not tested: Final 1.9.17 HIGH-strata implementation and the merged 1.9.18-dev migration.
 
 ### Next Test
-- After migration completes, run the full regression pass from this file before promoting any stable release.
+1. Load `1.9.18-dev` and confirm no startup Lua errors.
+2. Confirm cooldown icons render above the bar but behind timeline numbers.
+3. Confirm Client Default and all four selectable fonts change only Cooline timeline text.
+4. Open unitframe/right-click menus and confirm Cooline never changes their fonts.
+5. Check account-wide/per-character appearance switching and persistence.
+6. Check horizontal, vertical and reversed layouts.
+7. Check active/inactive opacity sliders and typed values, including values above 100%.
+8. Check spell and item blacklist/whitelist behaviour and existing saved filters.
+9. Check minimap button, lock/unlock, right-click options and Alt-drag reposition.
+10. Check cooldown-failure animation.
+11. Treat non-English locale behaviour as unverified unless tested on those clients.
 
 ## Planned / To-do
-- Convert active development to VanillaTemplate branch/version rules.
-- Normalize addon filenames to `Cooline.toc` and `Cooline.lua`.
-- Split localization into `locales/enUS.lua` plus per-locale translation files.
-- Integrate `compat.lua` and `appearance.lua` into the main Lua file.
-- Remove post-hoc translation/font traversal and patch-style polling where a direct implementation is available.
-- Preserve all SavedVariables and migration compatibility.
-- Make the TOC the only version source.
-- Keep the proposed Spells/Items options-panel re-layout out of this migration.
+- Run the migration regression test above.
+- After regression passes, implement the approved Spells/Items options-panel re-layout as the next normal dev task.
+- Continue development on `dev` using `-dev` without numbered dev suffixes.
 
 ## Ideas / Backlog
-- Reorganize the Spells and Items option panels using the approved mock-up after migration regression testing.
+- Approved Spells/Items page reorganization: compact Icon Size, Filter Type, Add, and expanded Filtered list sections with matching layouts.
 
 ## Deferred
-- Promotion to 2.0.0.
-- Stable branch release until user explicitly confirms a known-good build.
+- Creating/promoting stable `main` until the user explicitly approves a known-good release.
+- Retiring legacy `master` until stable `main` exists.
+- Promotion to 2.0.0 until the redesigned addon is stable.
+- Any Debug.lua tooling until a concrete debugging need appears.
 
 ## Exact Next Step
-Complete the VanillaTemplate structural/code migration on `dev`, then perform a static audit and hand the resulting `1.9.18-dev` build to the user for in-game regression testing.
+Install/test `1.9.18-dev` from `dev`; first confirm there are no Lua errors and that cooldown icons sit behind the timeline numbers. If those pass, continue through the regression checklist before beginning the Spells/Items layout work.
