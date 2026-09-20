@@ -1264,6 +1264,7 @@ end
 local RefreshAppearanceOptions
 local fontDropdown
 local fontPopup
+local HIGHLIGHT_TEXT_COLOR = { 0.16, 0.51, 0.82 }
 local sliderCount = 0
 local FILTER_ROW_HEIGHT = 28
 local SPELL_VISIBLE_ROWS = 7
@@ -1274,7 +1275,7 @@ local function MakeText(parent, text, x, y, size, title)
 	fs:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
 	fs:SetFont(GetClientDefaultFont(), size or 11)
 	if title then
-		fs:SetTextColor(1, 0.82, 0)
+		fs:SetTextColor(unpack(HIGHLIGHT_TEXT_COLOR))
 	else
 		fs:SetTextColor(0.9, 0.9, 0.9)
 	end
