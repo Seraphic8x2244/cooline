@@ -2,85 +2,62 @@
 
 ## Current
 - Branch: `dev`
-- Version: `1.9.18-dev`
-- Goal: Stable `1.9.18` is released on `main`; resume new development on `dev`.
+- Version: `2.0.0-dev`
+- Stable release: `2.0.0` on `main`
+- Status: Feature-complete for now; development paused by user decision.
 
 ## Recent Commits
-- Stable `main`: `e0ef4d5` - final 1.9.18 release cleanup.
-- `026736f` - Record Cooline 1.9.18 release approval on `dev`.
+- Stable `main`: cdd5022 - Release Cooline 2.0.0.
+- `8673451` - Align dev version with Cooline 2.0.0.
+- `9fd3b04` - Add Qiraji-blue Cooline title to addon list.
 - `7d2ffbc` - Migrate Cooline core to VanillaTemplate structure.
-- `1d7af96` - Add zhTW locale file (final per-locale split commit).
-- `0af6b47` - Add canonical enUS locale file.
-- `891af80` - Add Cooline development progress.
-- `e024836` - Add VanillaTemplate development guide.
 - Migration base: `932921c` - Cooline 1.9.17 timeline strata fix on legacy `master`.
 
 ## Completed / Verified
-- Stable `main` created and released as `1.9.18` with development-only docs removed and no `-dev` suffix.
-- Active development now uses the `dev` branch.
-- `DEV_GUIDE.md` matches VanillaTemplate.
-- `DEV_PROGRESS.md` is present for handoff/status tracking.
-- Dev TOC is the version source and reports a Qiraji-blue `Cooline` name with normal `-dev` suffix / `1.9.18-dev`.
-- Addon files are normalized to `Cooline.toc` and `Cooline.lua`.
+- Stable workflow migration is complete: active development uses `dev`, stable releases use `main`.
+- Stable `main` contains only installable addon files; development-only docs remain on `dev`.
+- Addon structure is normalized to `Cooline.toc`, `Cooline.lua`, `locales/`, and `artwork/`.
 - SavedVariables remain `CoolineDB` and `CoolineCharDB`.
-- Locale files are split into `locales/enUS.lua` plus deDE, frFR, esES, koKR, zhCN and zhTW overrides.
-- `compat.lua`, `appearance.lua`, legacy `locales.lua`, and lowercase Lua/TOC files are removed from `dev`.
-- Static audit confirms every newly created FontString in the merged core has a font/font object before text is assigned.
-- Static audit confirms no writes to Blizzard shared `DropDownList...Button` font rows remain.
-- Static audit confirms no post-hoc localization walker or appearance polling driver remains.
-- Client Default bar-font inheritance was user-confirmed before migration.
-- User reports the migrated `1.9.18-dev` build looks good in-game; full checklist items not individually confirmed remain tracked below.
+- Locale files are split into `enUS`, deDE, frFR, esES, koKR, zhCN and zhTW files.
+- Client Default bar-font inheritance was user-confirmed.
+- User accepted the migrated addon state and Qiraji-blue Cooline branding as good.
+- Qiraji-gem mid blue `#2982D1` is used only for the `Cooline` addon name in the options header and addon-list TOC title.
+- Stable release is now `2.0.0`.
 
-## Implemented / Awaiting Test
-- Qiraji-gem mid blue `#2982D1` (`0.16, 0.51, 0.82`) is used only for the `Cooline` addon name in the options header and addon-list TOC title; all page headers, subheaders, tabs, borders, buttons and the `-dev` suffix retain their existing gold/normal colours.
-- Timeline labels are created directly on a dedicated HIGH-strata Cooline overlay; cooldown icons remain in the normal bar hierarchy.
+## Implemented / Not Fully Runtime-Verified
+- Timeline labels use a dedicated HIGH-strata Cooline overlay so cooldown icons remain above the bar but behind timeline text.
 - Font selection is integrated directly into `Cooline.lua` with a Cooline-owned preview popup.
 - Locale-scoped spell/item filter migration is integrated into settings initialization.
-- Non-English cooldown-failure matching is integrated directly into the core event path instead of wrapping bar scripts.
-- Opacity SavedVariables and direct edit-box input are clamped at the source.
-- Custom Cooline UI FontStrings use the active client default font unless the timeline font option explicitly selects another font.
-- Full `1.9.18-dev` migration regression remains untested in-game.
+- Non-English cooldown-failure matching is integrated directly into the core event path.
+- Opacity SavedVariables and typed input are clamped at the source.
+- Static audit confirmed every newly created FontString has a font/font object before text is assigned.
+- Static audit confirmed no writes to Blizzard shared `DropDownList...Button` font rows remain.
+- Non-English client behaviour has not been exhaustively runtime-tested.
 
 ## Current Issues
+- No known active issue.
 - No known static migration error.
-- Final timeline text-above-icons behaviour is still awaiting in-game confirmation.
-- Non-English client behaviour is not runtime-tested.
-- No Lua 5.0 compiler/client is available in the development environment; static inspection does not count as an in-game test.
 
 ## Testing
 
-### Last Test
-- Version/commit: pre-migration 1.9.17 line.
-- Passed: Client Default bar font inheritance.
-- Failed: Earlier frame-level-only text layering attempts before the dedicated HIGH-strata implementation.
-- Not tested: Final 1.9.17 HIGH-strata implementation and the merged 1.9.18-dev migration.
+### Last Accepted State
+- Version: `2.0.0`
+- User assessment: addon feels done for now.
+- Known accepted branding: Qiraji-blue `Cooline` name only; all other headers retain gold/normal colours.
 
-### Next Test
-1. Load `1.9.18-dev` and confirm no startup Lua errors.
-2. Confirm cooldown icons render above the bar but behind timeline numbers.
-3. Confirm Client Default and all four selectable fonts change only Cooline timeline text.
-4. Open unitframe/right-click menus and confirm Cooline never changes their fonts.
-5. Check account-wide/per-character appearance switching and persistence.
-6. Check horizontal, vertical and reversed layouts.
-7. Check active/inactive opacity sliders and typed values, including values above 100%.
-8. Check spell and item blacklist/whitelist behaviour and existing saved filters.
-9. Check minimap button, lock/unlock, right-click options and Alt-drag reposition.
-10. Check cooldown-failure animation.
-11. Treat non-English locale behaviour as unverified unless tested on those clients.
+### Future Regression Check
+If development resumes, re-check startup errors, timeline draw order, fonts/menu isolation, appearance scope, layouts, opacity, filters, minimap/locking and cooldown animation before the next stable release.
 
 ## Planned / To-do
-- Run the migration regression test above.
-- After regression passes, implement the approved Spells/Items options-panel re-layout as the next normal dev task.
-- Continue development on `dev` using `-dev` without numbered dev suffixes.
+- None. Development is paused.
 
 ## Ideas / Backlog
-- Approved Spells/Items page reorganization: compact Icon Size, Filter Type, Add, and expanded Filtered list sections with matching layouts.
+- Spells/Items options-panel re-layout remains an optional future idea, not an active task.
 
 ## Deferred
-- Creating/promoting stable `main` until the user explicitly approves a known-good release.
-- Retiring legacy `master` until stable `main` exists.
-- Promotion to 2.0.0 until the redesigned addon is stable.
-- Any Debug.lua tooling until a concrete debugging need appears.
+- Any further UI redesign or feature additions.
+- Additional non-English runtime verification.
+- Debug tooling unless a concrete need appears.
 
 ## Exact Next Step
-Start the next development task from `dev`; the deferred Spells/Items options-panel re-layout is the next planned feature batch.
+None. Cooline 2.0.0 is the current finished release. If development resumes, start from `dev`, review this file, choose the next development version, and define the new scope before changing code.
