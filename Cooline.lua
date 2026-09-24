@@ -60,6 +60,7 @@ local STYLE_PRESETS = {
 
 local bar = CreateFrame("Frame", "CoolineBar", UIParent)
 local cooldowns = {}
+local activeCooldowns = {}
 local initialised = false
 local ToggleOptions
 local ApplyBarLockState
@@ -67,7 +68,19 @@ local UpdateMinimapButton
 local optionsFrame
 local pendingItemUse
 local itemCooldownLocks = {}
+local spellFilterSets = { blacklist = {}, whitelist = {} }
+local itemFilterSets = { blacklist = {}, whitelist = {} }
+local spellbookCache = {}
+local spellbookDirty = true
+local spellSeen = {}
+local itemSeen = {}
+local itemCandidates = {}
+local activeItemSignatures = {}
 local ITEM_INTENT_WINDOW = 1.0
+local pendingSpellReconcile = false
+local pendingItemReconcile = false
+local RefreshRuntimeDriver
+local RebuildSpellbookCache
 
 local function CapturePendingItem(name, texture)
 	if not name or name == "" then
@@ -79,10 +92,13 @@ local function CapturePendingItem(name, texture)
 		texture = texture,
 		time = GetTime(),
 	}
+
+	bar.itemRetryAt = pendingItemUse.time
+	if initialised and RefreshRuntimeDriver then
+		RefreshRuntimeDriver()
+	end
 end
 
-local scanElapsed = 0
-local SCAN_INTERVAL = 0.50
 local visuals
 local GetSpellCount
 
@@ -312,28 +328,61 @@ local function Trim(text)
 	return text
 end
 
-local function ListContainsName(list, name)
-	local i, entry
+local function ClearTable(target)
+	local key
 
-	if not list or not name then return false end
+	for key in pairs(target) do
+		target[key] = nil
+	end
+end
 
-	for i, entry in ipairs(list) do
-		if type(entry) == "string" and strupper(entry) == strupper(name) then
-			return true
+local function BuildNameSet(target, list)
+	local i
+	local entry
+
+	ClearTable(target)
+	if not list then return end
+
+	for i = 1, table.getn(list) do
+		entry = list[i]
+		if type(entry) == "string" then
+			target[strupper(entry)] = true
 		end
 	end
+end
 
-	return false
+local function RefreshSpellFilterCache()
+	BuildNameSet(spellFilterSets.blacklist, CoolineCharDB.filters.blacklist)
+	BuildNameSet(spellFilterSets.whitelist, CoolineCharDB.filters.whitelist)
+end
+
+local function RefreshItemFilterCache()
+	BuildNameSet(itemFilterSets.blacklist, CoolineCharDB.itemFilters.blacklist)
+	BuildNameSet(itemFilterSets.whitelist, CoolineCharDB.itemFilters.whitelist)
+end
+
+local function RefreshFilterCaches()
+	RefreshSpellFilterCache()
+	RefreshItemFilterCache()
 end
 
 local function SpellAllowed(name)
 	local filters = CoolineCharDB.filters
+	local set
+
+	if not name then return false end
 
 	if filters.mode == "whitelist" then
-		return ListContainsName(filters.whitelist, name)
+		set = spellFilterSets.whitelist
+	else
+		set = spellFilterSets.blacklist
 	end
 
-	return not ListContainsName(filters.blacklist, name)
+	if filters.mode == "whitelist" then
+		return set[strupper(name)] and true or false
+	end
+
+	return not set[strupper(name)]
 end
 
 local function GetActiveFilterList()
@@ -345,19 +394,27 @@ local function GetActiveFilterList()
 end
 
 local function ResolveSpellNameAndIcon(typedName)
-	local count = GetSpellCount and GetSpellCount() or 0
+	local count
 	local i
-	local name
-	local texture
+	local entry
+	local typedUpper
 	local resolvedName
+	local texture
 
-	-- Highest learned rank wins because spellbook entries are scanned in order.
+	if spellbookDirty and RebuildSpellbookCache then
+		RebuildSpellbookCache()
+	end
+
+	typedUpper = strupper(typedName or "")
+	count = table.getn(spellbookCache)
+
+	-- Highest learned rank wins because spellbook entries are cached in order.
 	-- We keep updating the match so the final result is the highest learned rank.
 	for i = 1, count do
-		name = GetSpellName(i, BOOKTYPE_SPELL)
-		if name and strupper(name) == strupper(typedName) then
-			resolvedName = name
-			texture = GetSpellTexture(i, BOOKTYPE_SPELL)
+		entry = spellbookCache[i]
+		if entry.name and entry.upperName == typedUpper then
+			resolvedName = entry.name
+			texture = entry.texture
 		end
 	end
 
@@ -367,12 +424,21 @@ end
 
 local function ItemAllowed(name)
 	local filters = CoolineCharDB.itemFilters
+	local set
+
+	if not name then return false end
 
 	if filters.mode == "whitelist" then
-		return ListContainsName(filters.whitelist, name)
+		set = itemFilterSets.whitelist
+	else
+		set = itemFilterSets.blacklist
 	end
 
-	return not ListContainsName(filters.blacklist, name)
+	if filters.mode == "whitelist" then
+		return set[strupper(name)] and true or false
+	end
+
+	return not set[strupper(name)]
 end
 
 local function GetActiveItemFilterList()
@@ -583,6 +649,7 @@ local function ApplyVisualLayout()
 		local size = GetIconSizeForKey(name)
 		cd:SetWidth(size)
 		cd:SetHeight(size)
+		cd.renderSize = size
 	end
 
 	LayoutLabels()
@@ -590,6 +657,8 @@ end
 
 local function UpdateBarAlpha(active)
 	local alpha
+
+	bar.activeVisual = active and true or false
 	local i
 
 	if active then
@@ -858,6 +927,34 @@ GetSpellCount = function()
 	return highest
 end
 
+RebuildSpellbookCache = function()
+	local count = GetSpellCount()
+	local oldCount = table.getn(spellbookCache)
+	local i
+	local name
+	local entry
+
+	for i = 1, count do
+		name = GetSpellName(i, BOOKTYPE_SPELL)
+		entry = spellbookCache[i]
+		if not entry then
+			entry = {}
+			spellbookCache[i] = entry
+		end
+
+		entry.id = i
+		entry.name = name
+		entry.upperName = name and strupper(name) or nil
+		entry.texture = name and GetSpellTexture(i, BOOKTYPE_SPELL) or nil
+	end
+
+	for i = count + 1, oldCount do
+		spellbookCache[i] = nil
+	end
+
+	spellbookDirty = false
+end
+
 
 local function FindFailedSpellName(message)
 	local _, _, failedSpell
@@ -866,6 +963,7 @@ local function FindFailedSpellName(message)
 	local bestName
 	local bestLength = 0
 	local i
+	local entry
 	local name
 	local startTime
 	local duration
@@ -885,13 +983,18 @@ local function FindFailedSpellName(message)
 		end
 	end
 
-	count = GetSpellCount and GetSpellCount() or 0
+	if spellbookDirty then
+		RebuildSpellbookCache()
+	end
+
+	count = table.getn(spellbookCache)
 	now = GetTime()
 
 	for i = 1, count do
-		name = GetSpellName(i, BOOKTYPE_SPELL)
+		entry = spellbookCache[i]
+		name = entry.name
 		if name and string.find(message, name, 1, true) then
-			startTime, duration, enabled = GetSpellCooldown(i, BOOKTYPE_SPELL)
+			startTime, duration, enabled = GetSpellCooldown(entry.id, BOOKTYPE_SPELL)
 			if enabled == 1 and duration and duration > 2.5 and
 			   startTime and (startTime + duration) > now and
 			   string.len(name) > bestLength then
@@ -913,6 +1016,7 @@ local function EnsureCooldown(key)
 		size = GetIconSizeForKey(key)
 		cd:SetWidth(size)
 		cd:SetHeight(size)
+		cd.renderSize = size
 		cd:SetBackdrop({
 			bgFile = [[Interface\AddOns\Cooline\artwork\backdrop.tga]]
 		})
@@ -929,8 +1033,53 @@ local function EnsureCooldown(key)
 	return cd
 end
 
+local function ActivateCooldown(key, cd)
+	activeCooldowns[key] = cd
+	if not cd:IsShown() then
+		cd:Show()
+	end
+end
+
+local function DeactivateCooldown(key, cd)
+	activeCooldowns[key] = nil
+	if cd:IsShown() then
+		cd:Hide()
+	end
+	cd.endTime = nil
+	cd.pulseStart = nil
+end
+
+local function AddItemCandidate(candidateCount, itemName, itemTexture, startValue, durationValue)
+	local candidate
+	local signature
+
+	if not itemName or not ItemAllowed(itemName) then
+		return candidateCount
+	end
+
+	signature = tostring(floor((startValue or 0) * 10 + 0.5)) .. ":" ..
+	            tostring(floor((durationValue or 0) * 10 + 0.5))
+
+	candidateCount = candidateCount + 1
+	candidate = itemCandidates[candidateCount]
+	if not candidate then
+		candidate = {}
+		itemCandidates[candidateCount] = candidate
+	end
+
+	candidate.name = itemName
+	candidate.texture = itemTexture
+	candidate.startTime = startValue
+	candidate.duration = durationValue
+	candidate.endTime = startValue + durationValue
+	candidate.signature = signature
+	activeItemSignatures[signature] = true
+
+	return candidateCount
+end
+
 local function ScanItems(seen)
-	local candidates = {}
+	local candidateCount = 0
 	local now = GetTime()
 	local bag, slot, slots
 	local startTime, duration, enabled
@@ -940,24 +1089,7 @@ local function ScanItems(seen)
 	local key
 	local lockedName
 
-	local function AddCandidate(itemName, itemTexture, startValue, durationValue)
-		if not itemName or not ItemAllowed(itemName) then
-			return
-		end
-
-		signature = tostring(floor((startValue or 0) * 10 + 0.5)) .. ":" ..
-		            tostring(floor((durationValue or 0) * 10 + 0.5))
-
-		candidates[table.getn(candidates) + 1] = {
-			name = itemName,
-			texture = itemTexture,
-			startTime = startValue,
-			duration = durationValue,
-			endTime = startValue + durationValue,
-			signature = signature,
-		}
-
-	end
+	ClearTable(activeItemSignatures)
 
 	-- Bags.
 	for bag = 0, 4 do
@@ -972,7 +1104,7 @@ local function ScanItems(seen)
 
 				if name then
 					texture = GetContainerItemInfo(bag, slot)
-					AddCandidate(name, texture, startTime, duration)
+					candidateCount = AddItemCandidate(candidateCount, name, texture, startTime, duration)
 				end
 			end
 		end
@@ -988,15 +1120,15 @@ local function ScanItems(seen)
 
 			if name then
 				texture = GetInventoryItemTexture("player", slot)
-				AddCandidate(name, texture, startTime, duration)
+				candidateCount = AddItemCandidate(candidateCount, name, texture, startTime, duration)
 			end
 		end
 	end
 
 	-- Highest priority: exact Vanilla use intent captured before cooldown begins.
 	if pendingItemUse and (now - pendingItemUse.time) <= ITEM_INTENT_WINDOW then
-		for i = 1, table.getn(candidates) do
-			candidate = candidates[i]
+		for i = 1, candidateCount do
+			candidate = itemCandidates[i]
 
 			if strupper(candidate.name) == strupper(pendingItemUse.name) then
 				itemCooldownLocks[candidate.signature] = pendingItemUse.name
@@ -1008,7 +1140,7 @@ local function ScanItems(seen)
 				cd.endTime = candidate.endTime
 				cd.icon:SetTexture(pendingItemUse.texture or candidate.texture)
 				cd:SetBackdropColor(0, 0, 0, 1)
-				cd:Show()
+				ActivateCooldown(key, cd)
 				seen[key] = true
 
 				pendingItemUse = nil
@@ -1023,8 +1155,8 @@ local function ScanItems(seen)
 
 	-- Preserve locked identities. Shared cooldown candidates may update timing,
 	-- but they never replace the locked name/icon.
-	for i = 1, table.getn(candidates) do
-		candidate = candidates[i]
+	for i = 1, candidateCount do
+		candidate = itemCandidates[i]
 		lockedName = itemCooldownLocks[candidate.signature]
 
 		if lockedName then
@@ -1037,7 +1169,7 @@ local function ScanItems(seen)
 					cd.startTime = candidate.startTime
 					cd.duration = candidate.duration
 					cd.endTime = candidate.endTime
-					cd:Show()
+					ActivateCooldown(key, cd)
 					seen[key] = true
 				end
 			end
@@ -1046,8 +1178,8 @@ local function ScanItems(seen)
 
 	-- Fallback for uses we could not directly capture:
 	-- choose exactly one representative for a new cooldown signature, then lock it.
-	for i = 1, table.getn(candidates) do
-		candidate = candidates[i]
+	for i = 1, candidateCount do
+		candidate = itemCandidates[i]
 
 		if not itemCooldownLocks[candidate.signature] then
 			itemCooldownLocks[candidate.signature] = candidate.name
@@ -1059,7 +1191,7 @@ local function ScanItems(seen)
 			cd.endTime = candidate.endTime
 			cd.icon:SetTexture(candidate.texture)
 			cd:SetBackdropColor(0, 0, 0, 1)
-			cd:Show()
+			ActivateCooldown(key, cd)
 			seen[key] = true
 
 			-- Do not create another fallback identity for the same shared cooldown.
@@ -1067,13 +1199,8 @@ local function ScanItems(seen)
 	end
 
 	-- Remove locks once their cooldown signature has disappeared entirely.
-	local activeSignatures = {}
-	for i = 1, table.getn(candidates) do
-		activeSignatures[candidates[i].signature] = true
-	end
-
 	for signature, lockedName in pairs(itemCooldownLocks) do
-		if not activeSignatures[signature] then
+		if not activeItemSignatures[signature] then
 			itemCooldownLocks[signature] = nil
 		end
 	end
@@ -1101,56 +1228,96 @@ local function CooldownKeyAllowed(key)
 	return true
 end
 
-local function ReconcileAllCooldowns()
-	local seen = {}
+local function ReconcileSpellCooldowns()
 	local name, cd
 	local now = GetTime()
-
-	-- Re-scan spells into the same active set.
-	local spellCount = GetSpellCount()
-	local id
+	local spellCount
+	local i
+	local entry
 	local spellName
 	local startTime, duration, enabled
-	local texture
 	local key
 
-	for id = 1, spellCount do
-		spellName = GetSpellName(id, BOOKTYPE_SPELL)
+	if spellbookDirty then
+		RebuildSpellbookCache()
+	end
+
+	ClearTable(spellSeen)
+	spellCount = table.getn(spellbookCache)
+
+	for i = 1, spellCount do
+		entry = spellbookCache[i]
+		spellName = entry.name
 
 		if spellName then
-			startTime, duration, enabled = GetSpellCooldown(id, BOOKTYPE_SPELL)
+			startTime, duration, enabled = GetSpellCooldown(entry.id, BOOKTYPE_SPELL)
 
 			if SpellAllowed(spellName) and enabled == 1 and duration and duration > 2.5 then
 				if (startTime + duration) > now then
 					key = "spell:" .. spellName
 					cd = EnsureCooldown(key)
-					texture = GetSpellTexture(id, BOOKTYPE_SPELL)
-
 					cd.startTime = startTime
 					cd.duration = duration
 					cd.endTime = startTime + duration
-					cd.icon:SetTexture(texture)
+					cd.icon:SetTexture(entry.texture)
 					cd:SetBackdropColor(0.8, 0.4, 0, 1)
-					cd:Show()
-					seen[key] = true
+					ActivateCooldown(key, cd)
+					spellSeen[key] = true
 				end
 			end
 		end
 	end
 
-	ScanItems(seen)
-
-	for name, cd in pairs(cooldowns) do
-		if not CooldownKeyAllowed(name) then
-			cd:Hide()
-			cd.endTime = nil
-			cd.pulseStart = nil
-		elseif not seen[name] and (not cd.endTime or cd.endTime <= now) then
-			cd:Hide()
-			cd.endTime = nil
-			cd.pulseStart = nil
+	for name, cd in pairs(activeCooldowns) do
+		if string.sub(name, 1, 6) == "spell:" then
+			if not CooldownKeyAllowed(name) then
+				DeactivateCooldown(name, cd)
+			elseif not spellSeen[name] and (not cd.endTime or cd.endTime <= now) then
+				DeactivateCooldown(name, cd)
+			end
 		end
 	end
+
+	RefreshRuntimeDriver()
+end
+
+local function ReconcileItemCooldowns()
+	local name, cd
+	local now = GetTime()
+
+	ClearTable(itemSeen)
+	ScanItems(itemSeen)
+
+	for name, cd in pairs(activeCooldowns) do
+		if string.sub(name, 1, 5) == "item:" then
+			if not CooldownKeyAllowed(name) then
+				DeactivateCooldown(name, cd)
+			elseif not itemSeen[name] and (not cd.endTime or cd.endTime <= now) then
+				DeactivateCooldown(name, cd)
+			end
+		end
+	end
+
+	if not pendingItemUse then
+		bar.itemRetryAt = nil
+	end
+
+	RefreshRuntimeDriver()
+end
+
+local function ReconcileAllCooldowns()
+	ReconcileSpellCooldowns()
+	ReconcileItemCooldowns()
+end
+
+local function QueueSpellReconcile()
+	pendingSpellReconcile = true
+	RefreshRuntimeDriver()
+end
+
+local function QueueItemReconcile()
+	pendingItemReconcile = true
+	RefreshRuntimeDriver()
 end
 
 local COOLDOWN_PULSE_DURATION = 0.26
@@ -1187,12 +1354,12 @@ local function TriggerCooldownPulse(spellName)
 	if cd and cd.endTime and cd.endTime > now then
 		-- Every failed cast restarts the pulse.
 		cd.pulseStart = now
+		RefreshRuntimeDriver()
 	end
 end
 
 local function Render()
 	local now = GetTime()
-	local anyActive = false
 	local name, cd
 	local remaining
 	local offset
@@ -1203,59 +1370,103 @@ local function Render()
 	local pulse
 	local targetScale
 
-	for name, cd in pairs(cooldowns) do
-		if cd.endTime then
-			remaining = cd.endTime - now
-
-			if remaining > 0 then
-				anyActive = true
-				offset = TimelineOffset(remaining)
-
+	for name, cd in pairs(activeCooldowns) do
+		remaining = cd.endTime and (cd.endTime - now) or 0
+		if remaining > 0 then
+			offset = TimelineOffset(remaining)
+			if cd.renderLevel ~= level then
 				cd:SetFrameLevel(level)
-				level = level + 1
+				cd.renderLevel = level
+			end
+			level = level + 1
+			baseSize = GetIconSizeForKey(name)
+			drawSize = baseSize
 
-				baseSize = GetIconSizeForKey(name)
-				drawSize = baseSize
-
-				if cd.pulseStart then
-					progress = (now - cd.pulseStart) / COOLDOWN_PULSE_DURATION
-
-					if progress >= 1 then
-						cd.pulseStart = nil
-					elseif progress >= 0 then
-						-- Smooth triangle: normal -> selected scale -> normal.
-						if progress < 0.5 then
-							pulse = progress * 2
-						else
-							pulse = (1 - progress) * 2
-						end
-
-						targetScale = visuals.cooldownanimate / 100
-						drawSize = baseSize * (1 + ((targetScale - 1) * pulse))
+			if cd.pulseStart then
+				progress = (now - cd.pulseStart) / COOLDOWN_PULSE_DURATION
+				if progress >= 1 then
+					cd.pulseStart = nil
+				elseif progress >= 0 then
+					if progress < 0.5 then
+						pulse = progress * 2
+					else
+						pulse = (1 - progress) * 2
 					end
+					targetScale = visuals.cooldownanimate / 100
+					drawSize = baseSize * (1 + ((targetScale - 1) * pulse))
 				end
+			end
 
-				-- Only protect the frame API from invalid dimensions.
-				if drawSize < 1 then
-					drawSize = 1
-				end
+			if drawSize < 1 then
+				drawSize = 1
+			end
 
+			if cd.renderSize ~= drawSize then
 				cd:SetWidth(drawSize)
 				cd:SetHeight(drawSize)
-				PlaceOnTimeline(cd, offset)
-				cd:SetAlpha(1)
-				cd:Show()
-			else
-				cd:Hide()
-				cd.endTime = nil
-				cd.pulseStart = nil
+				cd.renderSize = drawSize
 			end
+			PlaceOnTimeline(cd, offset)
+		else
+			DeactivateCooldown(name, cd)
+		end
+	end
+end
+
+local function RuntimeOnUpdate()
+	local now
+	local reconciledItems = false
+
+	if not initialised then
+		return
+	end
+
+	if pendingSpellReconcile then
+		pendingSpellReconcile = false
+		ReconcileSpellCooldowns()
+	end
+
+	if pendingItemReconcile then
+		pendingItemReconcile = false
+		ReconcileItemCooldowns()
+		reconciledItems = true
+	end
+
+	now = GetTime()
+	if bar.itemRetryAt and now >= bar.itemRetryAt then
+		bar.itemRetryAt = nil
+		if not reconciledItems then
+			ReconcileItemCooldowns()
+		end
+		if pendingItemUse and (now - pendingItemUse.time) <= ITEM_INTENT_WINDOW then
+			bar.itemRetryAt = now + 0.10
 		end
 	end
 
-	UpdateBarAlpha(anyActive)
+	if next(activeCooldowns) then
+		Render()
+	end
+	RefreshRuntimeDriver()
 end
 
+RefreshRuntimeDriver = function()
+	local hasActive = next(activeCooldowns) ~= nil
+	local needsDriver = hasActive or bar.itemRetryAt ~= nil or pendingSpellReconcile or pendingItemReconcile
+
+	if bar.activeVisual ~= hasActive then
+		UpdateBarAlpha(hasActive)
+	end
+
+	if needsDriver then
+		if not bar.runtimeDriver then
+			bar.runtimeDriver = true
+			bar:SetScript("OnUpdate", RuntimeOnUpdate)
+		end
+	elseif bar.runtimeDriver then
+		bar.runtimeDriver = nil
+		bar:SetScript("OnUpdate", nil)
+	end
+end
 
 -- ============================================================================
 -- Options
@@ -1832,12 +2043,26 @@ local function FindSpellRowByName(name)
 	return nil
 end
 
+local function FilterRowOnUpdate()
+	if this.flashTime and this.flashTime > 0 then
+		this.flashTime = this.flashTime - arg1
+		if this.flashTime <= 0 then
+			this.flashTime = nil
+			this.highlight:Hide()
+			this:SetScript("OnUpdate", nil)
+		else
+			this.highlight:SetAlpha(min(0.55, this.flashTime))
+		end
+	end
+end
+
 local function FlashFilterRow(row)
 	if not row then return end
 
 	row.flashTime = 0.55
 	row.highlight:Show()
 	row.highlight:SetAlpha(0.55)
+	row:SetScript("OnUpdate", FilterRowOnUpdate)
 end
 
 local function RemoveSpellAtIndex(index)
@@ -1845,6 +2070,7 @@ local function RemoveSpellAtIndex(index)
 
 	if index >= 1 and index <= table.getn(list) then
 		tremove(list, index)
+		RefreshSpellFilterCache()
 	end
 end
 
@@ -1939,6 +2165,7 @@ local function AddSpellFromBox()
 	storedName = resolvedName or typed
 
 	tinsert(list, storedName)
+	RefreshSpellFilterCache()
 	optionsFrame.spellAdd:SetText("")
 
 	-- Move the list to the new row if it is beyond the viewport.
@@ -1950,7 +2177,7 @@ local function AddSpellFromBox()
 	FlashFilterRow(FindSpellRowByName(storedName))
 
 	-- Reconcile immediately so filter changes take effect now.
-	ReconcileAllCooldowns()
+	ReconcileSpellCooldowns()
 end
 
 
@@ -2022,6 +2249,7 @@ local function RemoveItemAtIndex(index)
 	local list = GetActiveItemFilterList()
 	if index >= 1 and index <= table.getn(list) then
 		tremove(list, index)
+		RefreshItemFilterCache()
 	end
 end
 
@@ -2049,6 +2277,7 @@ local function AddItemFromBox()
 	storedName = resolvedName or typed
 
 	tinsert(list, storedName)
+	RefreshItemFilterCache()
 	optionsFrame.itemAdd:SetText("")
 
 	if table.getn(list) > ITEM_VISIBLE_ROWS then
@@ -2057,7 +2286,7 @@ local function AddItemFromBox()
 
 	RefreshItemRows()
 	FlashFilterRow(FindItemRowByName(storedName))
-	ReconcileAllCooldowns()
+	ReconcileItemCooldowns()
 end
 
 local function ShowOptionsPage(page)
@@ -2340,19 +2569,7 @@ local function BuildSpellsPage()
 			if this:GetParent().dataIndex then
 				RemoveSpellAtIndex(this:GetParent().dataIndex)
 				RefreshSpellRows()
-				ReconcileAllCooldowns()
-			end
-		end)
-
-		row:SetScript("OnUpdate", function()
-			if this.flashTime and this.flashTime > 0 then
-				this.flashTime = this.flashTime - arg1
-				if this.flashTime <= 0 then
-					this.flashTime = nil
-					this.highlight:Hide()
-				else
-					this.highlight:SetAlpha(min(0.55, this.flashTime))
-				end
+				ReconcileSpellCooldowns()
 			end
 		end)
 
@@ -2387,7 +2604,7 @@ local function BuildSpellsPage()
 
 		optionsFrame.spellOffset = 0
 		RefreshSpellRows()
-		ReconcileAllCooldowns()
+		ReconcileSpellCooldowns()
 	end)
 
 	optionsFrame.spellAdd:SetScript("OnEnterPressed", function()
@@ -2510,19 +2727,7 @@ local function BuildItemsPage()
 			if this:GetParent().dataIndex then
 				RemoveItemAtIndex(this:GetParent().dataIndex)
 				RefreshItemRows()
-				ReconcileAllCooldowns()
-			end
-		end)
-
-		row:SetScript("OnUpdate", function()
-			if this.flashTime and this.flashTime > 0 then
-				this.flashTime = this.flashTime - arg1
-				if this.flashTime <= 0 then
-					this.flashTime = nil
-					this.highlight:Hide()
-				else
-					this.highlight:SetAlpha(min(0.55, this.flashTime))
-				end
+				ReconcileItemCooldowns()
 			end
 		end)
 
@@ -2552,7 +2757,7 @@ local function BuildItemsPage()
 		end
 		optionsFrame.itemOffset = 0
 		RefreshItemRows()
-		ReconcileAllCooldowns()
+		ReconcileItemCooldowns()
 	end)
 
 	optionsFrame.itemAdd:SetScript("OnEnterPressed", function()
@@ -2759,6 +2964,7 @@ local function BindAppearanceScripts()
 		value = floor(this:GetValue() + 0.5)
 		visuals.activealpha = value / 100
 		this.edit:SetText(value .. "%")
+		UpdateBarAlpha(next(activeCooldowns) ~= nil)
 	end)
 
 	optionsFrame.inactive:SetScript("OnValueChanged", function()
@@ -2767,6 +2973,7 @@ local function BindAppearanceScripts()
 		value = floor(this:GetValue() + 0.5)
 		visuals.inactivealpha = value / 100
 		this.edit:SetText(value .. "%")
+		UpdateBarAlpha(next(activeCooldowns) ~= nil)
 	end)
 
 	optionsFrame.length.edit:SetScript("OnEnterPressed", function()
@@ -2814,6 +3021,7 @@ local function BindAppearanceScripts()
 		if value < 0 then value = 0 end
 		if value > 100 then value = 100 end
 		visuals.activealpha = value / 100
+		UpdateBarAlpha(next(activeCooldowns) ~= nil)
 		optionsFrame.updating = true
 		optionsFrame.active:SetValue(value)
 		optionsFrame.updating = false
@@ -2829,6 +3037,7 @@ local function BindAppearanceScripts()
 		if value < 0 then value = 0 end
 		if value > 100 then value = 100 end
 		visuals.inactivealpha = value / 100
+		UpdateBarAlpha(next(activeCooldowns) ~= nil)
 		optionsFrame.updating = true
 		optionsFrame.inactive:SetValue(value)
 		optionsFrame.updating = false
@@ -2881,7 +3090,10 @@ end
 
 local function OnVariablesLoaded()
 	InitialiseSettings()
+	RefreshFilterCaches()
 	BuildBar()
+	spellbookDirty = true
+	RebuildSpellbookCache()
 	BuildOptions()
 	BuildMinimapButton()
 	ReconcileAllCooldowns()
@@ -2909,21 +3121,17 @@ bar:SetScript("OnEvent", function()
 		if failedSpell then
 			TriggerCooldownPulse(failedSpell)
 		end
-	elseif initialised then
+	elseif initialised and event == "SPELL_UPDATE_COOLDOWN" then
+		QueueSpellReconcile()
+	elseif initialised and event == "SPELLS_CHANGED" then
+		spellbookDirty = true
+		QueueSpellReconcile()
+	elseif initialised and (event == "BAG_UPDATE_COOLDOWN" or event == "BAG_UPDATE" or event == "UNIT_INVENTORY_CHANGED") then
+		QueueItemReconcile()
+	elseif initialised and event == "PLAYER_ENTERING_WORLD" then
+		pendingSpellReconcile = false
+		pendingItemReconcile = false
+		spellbookDirty = true
 		ReconcileAllCooldowns()
 	end
-end)
-
-bar:SetScript("OnUpdate", function()
-	if not initialised then
-		return
-	end
-
-	scanElapsed = scanElapsed + arg1
-	if scanElapsed >= SCAN_INTERVAL then
-		scanElapsed = 0
-		ReconcileAllCooldowns()
-	end
-
-	Render()
 end)
