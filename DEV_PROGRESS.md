@@ -2,13 +2,14 @@
 
 ## Current
 - Branch: `dev`.
-- Version: `2.1.1-dev` in `Cooline.toc`.
-- Current product tree before this status commit: `2b002af395228c0440c458cd583a1ad64e8b5e0c`. This differs from the user-passed burst-coalescing runtime tree only by the development-version metadata catch-up to `2.1.1-dev`; no Lua/runtime code changed. The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
-- Current runtime delta commit: `a9c53e8648c6c6d753c7b7327aab746222f0e5ec` (`Coalesce cooldown event bursts`). The product tree at cleanup commit `554be40272d8a55e6a35cf5b7a1e90625fde8bbd` is runtime-identical to this commit; the intervening commits only added and removed the temporary Lua 5.0.2 workflow.
+- Version: `2.1.2-dev` in `Cooline.toc`.
+- Current checked product tree before this status commit: `686aecb040545252492c9da59981beb902a6e3d4`. The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
+- Current runtime delta commit: `367fe609596950a34ae8d286388c18679fac7507` (`Finish native 2.1 performance pass`). Cleanup tree `686aecb040545252492c9da59981beb902a6e3d4` is product-identical; the intervening commits only added and removed the temporary Lua 5.0.2 compiler workflow.
+- Previously user-tested burst-coalescing runtime delta: `a9c53e8648c6c6d753c7b7327aab746222f0e5ec`, product-identical cleanup tree `554be40272d8a55e6a35cf5b7a1e90625fde8bbd`.
 - Previously user-tested runtime implementation: `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727` (`Optimize native cooldown reconciliation and rendering`), runtime-identical to checked tree `81331997c059320395838598d68adf5724ee2383`.
 - Stable baseline: `2.0.0` at `cdd502226b3e44b27d14fa2c855f0b93ae207c09` on `main`.
 - Goal: complete the native WoW 1.12.1 performance-focused `2.1.x` line first, release the final accepted `2.1.x` revision, preserve that native line, then develop `3.0.0` with ClassicAPI as a required runtime dependency.
-- Current scope boundary: Stage 1 only. The first native 2.1 performance delta and the follow-up safe burst-event coalescing delta have both passed targeted user runtime testing. Quantitative CPU/performance improvement remains unmeasured because the runtime environment has too many confounding variables. The next Stage 1 candidate may now be evaluated; ClassicAPI-required 3.0 remains blocked until native 2.1 is finished, promoted and preserved.
+- Current scope boundary: Stage 1 only. At the user's request, the three remaining native optimizations were deliberately batched into one final `2.1.2-dev` delta to avoid repeated client restarts/microtests. Implementation/static/compiler work for Stage 1 is complete; this combined delta is not yet user runtime-tested. Quantitative CPU/performance improvement remains unmeasured because the runtime environment has too many confounding variables. ClassicAPI-required 3.0 remains blocked until this final native delta passes, is promoted, tagged and preserved.
 
 ## Current Design / Development Contract
 
@@ -78,6 +79,10 @@ ClassicAPI currently provides capabilities that can remove much of Cooline's nat
 Before the 3.0 item path is designed, audit every relevant item-use route under ClassicAPI: bag clicks, equipped on-use items/trinkets, action buttons, `/use` macros, conditional macros and any supported client-specific route. Do not delete fallback discovery until exact item identity/cooldown behaviour is demonstrated for the intended routes.
 
 ## Recent Relevant Commits
+- `686aecb040545252492c9da59981beb902a6e3d4` — Remove temporary Lua 5.0.2 check after the final native Stage 1 delta passed.
+- `8c2799c4fd6067a836cc1454aedee87a16c57c1e` — Add temporary Lua 5.0.2 compiler workflow for the final native Stage 1 delta.
+- `367fe609596950a34ae8d286388c18679fac7507` — Finish native 2.1 performance pass: spellbook/filter caching, reconciliation scratch reuse/allocation cleanup, and flash-only filter-row `OnUpdate`.
+- `b8fdd8d7113a9a386cdf6bf1533b03e69ae31d58` — Bump Cooline to `2.1.2-dev` before the combined final Stage 1 runtime edit.
 - `2b002af395228c0440c458cd583a1ad64e8b5e0c` — Bump Cooline to `2.1.1-dev` to align the current product with the revised versioning rule; runtime Lua is unchanged from the user-passed burst-coalescing checkpoint.
 - `997381465eac7c361b26a1781574d1ef1e8a9cd6` — Sync the revised canonical development rulebook from VanillaTemplate.
 - Canonical VanillaTemplate rulebook revision: `b37a6c56c15a58d8001771b3e4947643e74753c1` — require a numeric version bump for every addon-affecting code/runtime/loader/metadata revision; documentation-only/status-only commits may retain the current version.
@@ -119,7 +124,12 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - If an item-retry deadline and a queued item reconciliation land on the same frame, the queued scan is reused instead of performing the item reconciliation twice.
 - `PLAYER_ENTERING_WORLD` still clears pending burst flags and performs the deliberate immediate full reconciliation. Startup, filter changes and direct item-use recovery remain immediate/non-coalesced as before.
 - This burst-coalescing delta is statically/compiler checked and user runtime-tested. Spell, consumable, on-use trinket, inventory/equipment burst and filter-update behaviour remained correct in the exercised paths.
-- Remaining Stage 1 candidates after this passed delta are stable spell/filter caching, reconciliation-allocation cleanup, and the optional filter-row flash `OnUpdate` cleanup. Evaluate the next candidate individually rather than bundling them.
+- At the user's explicit request, the remaining Stage 1 candidates were batched into the final `2.1.2-dev` delta rather than validated one by one.
+- Stable spellbook caching is implemented: spell names/textures/slots are cached and rebuilt on startup/world-entry and when `SPELLS_CHANGED` marks the cache dirty; ordinary cooldown reconciliation no longer rescans spell names/textures.
+- Stable filter lookup caching is implemented: locale-scoped spell/item blacklist and whitelist arrays are mirrored into uppercase lookup sets, refreshed after filter mutations, so cooldown scans no longer linearly scan/uppercase the filter lists for each candidate.
+- Reconciliation allocation cleanup is implemented: spell/item `seen` maps, item candidate records, and active item-signature scratch state are reused across reconciliations; item candidate records form a persistent pool while shared-cooldown lock semantics remain unchanged.
+- Filter-row flash cleanup is implemented: the seven spell rows and seven item rows no longer carry permanent `OnUpdate` handlers. A row installs the shared flash driver only while its 0.55-second highlight is active and removes it when the flash ends.
+- Stage 1 implementation is now complete pending the consolidated `2.1.2-dev` runtime pass.
 - Some 2.0.0 behaviour was not individually/exhaustively exercised in every path or locale before release; that historical validation debt remains release provenance rather than a standing test obligation.
 
 ## Static / Automated Checks
@@ -135,10 +145,14 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - Burst-coalescing diff/static review confirmed only `Cooline.lua` changed: two pending-domain flags, two queue helpers, next-frame servicing in the existing runtime driver, item-retry duplicate-scan avoidance, event routing to the queue helpers, and pending-flag clearing before immediate `PLAYER_ENTERING_WORLD` full reconciliation.
 - GitHub Actions run `36029076224` / job `107732927209` successfully verified the official Lua 5.0.2 source archive checksum `a6c85d85f912e1c321723084389d63dee7660b81b8292452b190ea7190dd73bc`, built Lua 5.0.2, and ran `luac -p` successfully against `Cooline.lua` and all locale Lua files for the burst-coalescing delta.
 - The temporary compiler workflow was removed after the pass. Comparing runtime commit `a9c53e8648c6c6d753c7b7327aab746222f0e5ec` to cleanup tree `554be40272d8a55e6a35cf5b7a1e90625fde8bbd` shows no product-file differences.
+- Final Stage 1 static review confirmed spellbook name/texture API scans are centralized in the cache rebuild; per-reconcile `seen` table creation and item-candidate table creation are removed; shared item-signature locking still uses the same signature/name rules; and filter-row `OnUpdate` is attached only by `FlashFilterRow`.
+- GitHub Actions run `36033235221` / job `107746908050` successfully built the official Lua 5.0.2 compiler and ran `luac -p` against `Cooline.lua` and all locale Lua files for the final combined Stage 1 delta.
+- The temporary compiler workflow was removed after that pass. Comparing runtime commit `367fe609596950a34ae8d286388c18679fac7507` to cleanup tree `686aecb040545252492c9da59981beb902a6e3d4` shows no product-file differences.
 
 ## Current Issues
 - The first `2.1.0-dev` performance delta has passed the targeted functional runtime paths exercised so far; no runtime regression was reported in those paths.
 - The burst-event coalescing delta at `a9c53e8648c6c6d753c7b7327aab746222f0e5ec` passed user runtime testing. A one-frame delay is intentional only for broad spell/item event bursts; direct recovery and world-entry paths remain immediate.
+- The final combined `2.1.2-dev` Stage 1 delta at `367fe609596950a34ae8d286388c18679fac7507` is implemented and checked but not yet user runtime-tested.
 - Quantitative CPU/performance improvement is not proven by user measurement because too many environmental variables make an informal before/after comparison unreliable. The architectural reductions remain statically established: no permanent 0.50-second full reconciliation, no permanent idle renderer, active-only rendering, and domain-split reconciliation.
 - Zoning/world-entry recovery was subsequently user-verified: an active cooldown survived an instance swap/loading-screen transition. An explicit cooldown-reset case, spellbook-change recovery, and exhaustive shared-item cooldown identity remain untested coverage, not known failures.
 - WoW 1.12.1 provides limited information for identifying some shared item cooldowns, so affected item identification remains best-effort on the native line.
@@ -162,10 +176,12 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - Performance result: no reliable quantitative before/after judgment; environmental variability remains too high.
 
 ### Next Runtime Test
-- No further runtime test is required for the burst-coalescing delta before evaluating the next Stage 1 candidate.
-- Any new Stage 1 optimization becomes a fresh untested delta and requires its own static/Lua 5.0.2 checks and targeted runtime validation.
-- A true cooldown-reset case remains optional opportunistic coverage; spellbook-change recovery and exhaustive shared-item identity are also untested but are not known failures.
-- 3.0 remains blocked until the final native 2.1 Stage 1 state is user-tested, promoted and preserved.
+- Perform one consolidated in-game regression pass on current `2.1.2-dev`; this is the final native Stage 1 validation gate.
+- In one session: verify a few ordinary spell cooldowns including rapid/spam input; use a potion/consumable; use and swap an on-use trinket; move inventory items; add/remove one spell filter and one item filter; confirm the filter-row highlight still animates and disappears normally.
+- Do one `/reload` or instance/loading-screen transition with an active cooldown to cover cache rebuild/world-entry recovery.
+- No quantitative CPU comparison is required; report any visible delay, missing/stale cooldown, wrong shared-item identity, filter mismatch, stuck highlight, Lua error or other behavioural regression.
+- If this consolidated pass succeeds, Stage 1 is complete. Promote this exact native runtime to stable `2.1.2`, tag `v2.1.2`, preserve it on `native-2.1`, then begin the documented ClassicAPI-required `3.0.0-dev` line.
+- Do not add further native optimization work unless this runtime pass exposes a concrete regression.
 
 ## Planned / Next Work
 
@@ -178,12 +194,12 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 6. **Checked:** complete static review and real Lua 5.0.2 compiler pass.
 7. **Passed:** targeted user runtime testing confirmed the exercised spell, potion, rapid-input, on-use trinket, reload recovery, equipment-change, failed-cast pulse and filter-update paths. Quantitative performance improvement was not measurable reliably in the user's environment.
 8. **Implemented/checked/passed:** safe burst-event coalescing. Same-frame broad spell events now collapse to one spell reconciliation and same-frame broad item/inventory events to one item reconciliation; immediate recovery/world-entry/user-action paths are preserved. User testing found no new regression in the exercised spell/item/filter/equipment paths.
-9. **Next:** evaluate the remaining candidates individually: stable spellbook/filter lookup caching, avoidable reconciliation garbage, and optional options-row flash `OnUpdate` cleanup. Before/as the next addon-affecting revision lands, bump `2.1.1-dev` to `2.1.2-dev`. Select only another change whose expected benefit is concrete and whose correctness risk is low.
-10. Re-run static/Lua 5.0.2 checks and targeted runtime validation for any additional Stage 1 delta.
-11. Promote the accepted final native 2.1 build to `main` using its exact final numeric `2.1.x` version without `-dev`; do not renumber backwards to `2.1.0`. Do not start the 3.0 runtime rewrite before 2.1 is an accepted stable checkpoint.
+9. **Implemented/checked, awaiting one consolidated runtime pass:** `2.1.2-dev` batches the final three native candidates by explicit user decision: stable spellbook/filter caching, reconciliation scratch/allocation reuse, and flash-only options-row `OnUpdate`.
+10. **Next:** run the single consolidated `2.1.2-dev` runtime pass above. Do not add more native optimization work unless it exposes a concrete regression.
+11. After a pass, promote the exact accepted native runtime to stable `2.1.2`, tag `v2.1.2`, preserve it on `native-2.1`, then move `dev` to `3.0.0-dev` for ClassicAPI-required development.
 
 ### Stage 2 — Preserve the final native line
-1. Tag the exact stable native release with the matching final `v2.1.x` tag.
+1. For the current final Stage 1 plan, tag the accepted native release as `v2.1.2`.
 2. Preserve that exact native release line on permanent branch `native-2.1`.
 3. The branch may be created immediately after 2.1 promotion; regardless, it must exist before 3.0 is promoted over 2.1 on `main`.
 4. Treat `native-2.1` as the known-good no-ClassicAPI fallback/reference line. Do not casually merge 3.x ClassicAPI-required architecture into it.
@@ -218,6 +234,6 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - The exact stable final `2.1.x` commit must be tagged with its matching version and preserved on `native-2.1` before 3.0 replaces it on `main`.
 
 ## Exact Next Step
-Evaluate the remaining native Stage 1 candidates against the user-passed burst-coalescing checkpoint: stable spellbook/filter lookup caching, avoidable reconciliation garbage, and optional options-row flash `OnUpdate` cleanup. Current addon version is `2.1.1-dev`; before/as the next addon-affecting delta lands, bump it to `2.1.2-dev` in accordance with the revised canonical rulebook. Choose the smallest clearly beneficial, low-risk next delta and keep it isolated for its own static/Lua 5.0.2/runtime validation. Do not begin ClassicAPI-required 3.0 work until native 2.1 has completed Stage 1, passed user testing for the final delta, and been promoted/preserved as the stable native checkpoint.
+Runtime-test the combined final native Stage 1 `2.1.2-dev` delta using **Next Runtime Test** above. Runtime implementation commit: `367fe609596950a34ae8d286388c18679fac7507`; checked cleanup tree: `686aecb040545252492c9da59981beb902a6e3d4`, product-identical and Lua 5.0.2 compiler-passed. If the consolidated runtime pass succeeds, immediately prepare/publish stable `2.1.2`, tag `v2.1.2`, preserve the exact release on `native-2.1`, and only then begin `3.0.0-dev` ClassicAPI work.
 
 
