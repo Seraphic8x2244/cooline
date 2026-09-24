@@ -8,7 +8,7 @@
 - Previously user-tested runtime implementation: `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727` (`Optimize native cooldown reconciliation and rendering`), runtime-identical to checked tree `81331997c059320395838598d68adf5724ee2383`.
 - Stable baseline: `2.0.0` at `cdd502226b3e44b27d14fa2c855f0b93ae207c09` on `main`.
 - Goal: complete a native WoW 1.12.1 performance-focused `2.1.0` release first, preserve that native line, then develop `3.0.0` with ClassicAPI as a required runtime dependency.
-- Current scope boundary: Stage 1 only. The first native 2.1 performance delta passed targeted user functional runtime testing. The follow-up safe burst-event coalescing delta is implemented, statically reviewed and Lua 5.0.2 compiler-checked, but has not yet been user runtime-tested. Quantitative CPU/performance improvement remains unmeasured because the runtime environment has too many confounding variables. Do not begin another Stage 1 optimization or ClassicAPI-required 3.0 work until this delta has a clear runtime result.
+- Current scope boundary: Stage 1 only. The first native 2.1 performance delta and the follow-up safe burst-event coalescing delta have both passed targeted user runtime testing. Quantitative CPU/performance improvement remains unmeasured because the runtime environment has too many confounding variables. The next Stage 1 candidate may now be evaluated; ClassicAPI-required 3.0 remains blocked until native 2.1 is finished, promoted and preserved.
 
 ## Current Design / Development Contract
 
@@ -115,8 +115,8 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - The queued work is serviced by the existing runtime driver on the next frame; there is no arbitrary timed throttle. Pending spell/item work itself keeps the driver alive until serviced.
 - If an item-retry deadline and a queued item reconciliation land on the same frame, the queued scan is reused instead of performing the item reconciliation twice.
 - `PLAYER_ENTERING_WORLD` still clears pending burst flags and performs the deliberate immediate full reconciliation. Startup, filter changes and direct item-use recovery remain immediate/non-coalesced as before.
-- This burst-coalescing delta is statically/compiler checked but not yet user runtime-tested.
-- Remaining Stage 1 candidates after this delta are stable spell/filter caching, reconciliation-allocation cleanup, and the optional filter-row flash `OnUpdate` cleanup. Do not begin one until the burst-coalescing delta receives a clear runtime result.
+- This burst-coalescing delta is statically/compiler checked and user runtime-tested. Spell, consumable, on-use trinket, inventory/equipment burst and filter-update behaviour remained correct in the exercised paths.
+- Remaining Stage 1 candidates after this passed delta are stable spell/filter caching, reconciliation-allocation cleanup, and the optional filter-row flash `OnUpdate` cleanup. Evaluate the next candidate individually rather than bundling them.
 - Some 2.0.0 behaviour was not individually/exhaustively exercised in every path or locale before release; that historical validation debt remains release provenance rather than a standing test obligation.
 
 ## Static / Automated Checks
@@ -135,7 +135,7 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 
 ## Current Issues
 - The first `2.1.0-dev` performance delta has passed the targeted functional runtime paths exercised so far; no runtime regression was reported in those paths.
-- The new burst-event coalescing delta at `a9c53e8648c6c6d753c7b7327aab746222f0e5ec` is checked but not yet user runtime-tested. A one-frame delay is now intentional only for the broad spell/item event bursts; direct recovery and world-entry paths remain immediate.
+- The burst-event coalescing delta at `a9c53e8648c6c6d753c7b7327aab746222f0e5ec` passed user runtime testing. A one-frame delay is intentional only for broad spell/item event bursts; direct recovery and world-entry paths remain immediate.
 - Quantitative CPU/performance improvement is not proven by user measurement because too many environmental variables make an informal before/after comparison unreliable. The architectural reductions remain statically established: no permanent 0.50-second full reconciliation, no permanent idle renderer, active-only rendering, and domain-split reconciliation.
 - Zoning/world-entry recovery was subsequently user-verified: an active cooldown survived an instance swap/loading-screen transition. An explicit cooldown-reset case, spellbook-change recovery, and exhaustive shared-item cooldown identity remain untested coverage, not known failures.
 - WoW 1.12.1 provides limited information for identifying some shared item cooldowns, so affected item identification remains best-effort on the native line.
@@ -151,14 +151,16 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - Performance result: no reliable quantitative before/after judgment; environmental variability is too high. Do not claim a measured CPU improvement from this test.
 - Not tested in this pass: an explicit cooldown-reset case, spellbook-change recovery, exhaustive shared-item cooldown identity, exhaustive per-locale coverage.
 
+### Last Runtime Test — Burst Coalescing
+- Version/commit: current `2.1.0-dev`, runtime delta `a9c53e8648c6c6d753c7b7327aab746222f0e5ec`, product-identical cleanup tree `554be40272d8a55e6a35cf5b7a1e90625fde8bbd`.
+- Passed: ordinary spell cooldown behaviour, potion/consumable cooldowns, equipped on-use trinket cooldowns, inventory/equipment changes including trinket swapping, and adding/removing filters all behaved the same as the prior tested checkpoint.
+- Rapid/spam-click failure-pulse behaviour was observed to appear only after a possible GCD boundary in some attempts. This is not attributed to burst coalescing: the failed-cast pulse still routes directly from `CHAT_MSG_SPELL_FAILED_LOCALPLAYER` to `TriggerCooldownPulse` and was not queued/coalesced by this delta. Treat the exact client/event timing as an existing/uncertain Vanilla behaviour unless a separate targeted investigation proves otherwise.
+- Failed: No new regression identified.
+- Performance result: no reliable quantitative before/after judgment; environmental variability remains too high.
+
 ### Next Runtime Test
-- Runtime-test the burst-event coalescing delta on current `2.1.0-dev`.
-- Confirm ordinary spell cooldowns still appear/update promptly, including rapid repeated/spam-click casts.
-- Confirm potion/consumable and equipped on-use trinket cooldowns still appear correctly.
-- Create inventory/equipment event bursts by moving items and swapping a trinket; confirm cooldown identity/state remains correct and no stale icon appears.
-- Confirm adding/removing spell and item filters still takes effect immediately; these paths were deliberately not coalesced.
-- A quick `/reload` or instance transition with an active cooldown is useful regression coverage but the world-entry full reconciliation itself was not changed.
-- No additional Stage 1 optimization should begin until this delta has a clear runtime result.
+- No further runtime test is required for the burst-coalescing delta before evaluating the next Stage 1 candidate.
+- Any new Stage 1 optimization becomes a fresh untested delta and requires its own static/Lua 5.0.2 checks and targeted runtime validation.
 - A true cooldown-reset case remains optional opportunistic coverage; spellbook-change recovery and exhaustive shared-item identity are also untested but are not known failures.
 - 3.0 remains blocked until the final native 2.1 Stage 1 state is user-tested, promoted and preserved.
 
@@ -172,8 +174,8 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 5. **Implemented for the first checkpoint:** convert rendering to active-only lifecycle management, disable the renderer when idle, iterate only active cooldowns, and avoid redundant `Show`, alpha, size and frame-level writes.
 6. **Checked:** complete static review and real Lua 5.0.2 compiler pass.
 7. **Passed:** targeted user runtime testing confirmed the exercised spell, potion, rapid-input, on-use trinket, reload recovery, equipment-change, failed-cast pulse and filter-update paths. Quantitative performance improvement was not measurable reliably in the user's environment.
-8. **Implemented/checked, awaiting runtime test:** safe burst-event coalescing. Same-frame broad spell events now collapse to one spell reconciliation and same-frame broad item/inventory events to one item reconciliation; immediate recovery/world-entry/user-action paths are preserved.
-9. **Next:** run the targeted burst-coalescing runtime test above. If it passes, evaluate the remaining candidates individually: stable spellbook/filter lookup caching, avoidable reconciliation garbage, and optional options-row flash `OnUpdate` cleanup. Select only another change whose expected benefit is concrete and whose correctness risk is low.
+8. **Implemented/checked/passed:** safe burst-event coalescing. Same-frame broad spell events now collapse to one spell reconciliation and same-frame broad item/inventory events to one item reconciliation; immediate recovery/world-entry/user-action paths are preserved. User testing found no new regression in the exercised spell/item/filter/equipment paths.
+9. **Next:** evaluate the remaining candidates individually: stable spellbook/filter lookup caching, avoidable reconciliation garbage, and optional options-row flash `OnUpdate` cleanup. Select only another change whose expected benefit is concrete and whose correctness risk is low.
 10. Re-run static/Lua 5.0.2 checks and targeted runtime validation for any additional Stage 1 delta.
 11. Promote the accepted 2.1 build to `main` as stable `2.1.0`; do not start the 3.0 runtime rewrite before 2.1 is an accepted stable checkpoint.
 
@@ -213,6 +215,6 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - The exact stable 2.1 commit must be tagged/preserved before 3.0 replaces it on `main`.
 
 ## Exact Next Step
-Runtime-test the safe burst-event coalescing delta on current `2.1.0-dev`, using **Next Runtime Test** above. The runtime implementation is `a9c53e8648c6c6d753c7b7327aab746222f0e5ec`; cleanup tree `554be40272d8a55e6a35cf5b7a1e90625fde8bbd` is product-identical and has already passed static review plus the real Lua 5.0.2 compiler check. Do not begin stable spell/filter caching, reconciliation-allocation cleanup, options-row `OnUpdate` cleanup, or ClassicAPI-required 3.0 work until this burst-coalescing delta has a clear user runtime result.
+Evaluate the remaining native Stage 1 candidates against the now user-passed burst-coalescing checkpoint: stable spellbook/filter lookup caching, avoidable reconciliation garbage, and optional options-row flash `OnUpdate` cleanup. Choose the smallest clearly beneficial, low-risk next delta and keep it isolated for its own static/Lua 5.0.2/runtime validation. Do not begin ClassicAPI-required 3.0 work until native 2.1 has completed Stage 1, passed user testing for the final delta, and been promoted/preserved as the stable native checkpoint.
 
 
