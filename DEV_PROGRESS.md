@@ -3,7 +3,7 @@
 ## Current
 - Branch: `dev`.
 - Version: `3.0.0-dev` in `Cooline.toc`.
-- Current dev branch head before this status commit: `225f984253a26ea95e3888021a8e05135971ac01` (`Start Cooline 3.0 development`). The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
+- Current dev branch head before this status commit: `3bdce5ae67ec6c29eeef58a6dc4f189f055e2df6` (`Start Cooline 3.0 ClassicAPI handoff`). The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
 - Stable release: `2.1.2` on `main` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505` (`Release Cooline 2.1.2`). Its `Cooline.lua` blob exactly matches the user-tested final native runtime.
 - Permanent native preservation branch: `native-2.1` at the exact same stable commit `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`.
 - The planned lightweight tag `v2.1.2` is not yet created because the available GitHub connector exposes branch/ref movement but not tag creation. Do not misstate it as existing.
@@ -88,6 +88,26 @@ Design implications:
 - Item cooldown state should be keyed by stable itemID for cooldown semantics, with item GUID/location used when the exact physical instance matters for use observation across slot moves.
 - Native shared-cooldown signature/name locking should be removed only after exact item-use observation is proven for all intended routes.
 - The existing 2.1 renderer/lifecycle optimizations remain valuable and should be retained; the broad native discovery scans are the part intended for replacement.
+
+### Stage 3 Item-Use Route Matrix Checkpoint
+Audit completed against ClassicAPI `7ab32df2aadc2171100aac859154085fcaed56b2` plus the currently supported SuperCleveRoidMacros conditional `/use` path.
+
+- **Stock bag use:** `UseContainerItem(bag, slot)`. The call exposes an exact physical location; ClassicAPI can resolve exact itemID/GUID from that location. Observation must preserve pre-use identity because a consumed/moved item cannot be assumed to remain in the slot after execution.
+- **Stock equipped use:** `UseInventoryItem(slot)`. The inventory slot is exact; ClassicAPI can resolve the equipped instance's itemID/GUID from `{equipmentSlotIndex=slot}`.
+- **ClassicAPI named/bound item use:** `C_Item.UseItemByName(itemInfo [, unit])` directly calls the engine item-use primitive after locating the first matching bag item and explicitly bypasses `UseContainerItem`. Direct `ITEM ...` bindings route through this same function, so this surface must be observed separately.
+- **Action-bar item-by-ID:** `UseAction(slot)` + `GetActionInfo(slot)` returns `"item", itemID`; exact itemID cooldown observation is available without a bag/equipment scan.
+- **Action-bar bag-instance item:** `UseAction(slot)` + `GetActionInfo(slot)` currently returns `"item", nil`. ClassicAPI documents that the action descriptor stores a bag-instance key whose itemID mapping is not yet exposed. Cooline therefore cannot prove exact itemID/GUID for this route with the current public API.
+- **Direct item bindings:** ClassicAPI's binding dispatcher executes `ITEM <arg>` via `C_Item.UseItemByName`; covered by the named-use route above.
+- **Ordinary/saved macro execution:** ClassicAPI macro execution falls back to the stock chat parser line-by-line; item-use slash handlers therefore ultimately depend on the active `SlashCmdList.USE` implementation. Cooline should observe the actual item-use APIs, not macro text, so aliases/conditionals remain transparent.
+- **Supported conditional/custom `/use`:** current SuperCleveRoidMacros `DoUse` uses `UseInventoryItem` for equipped matches and `C_Item.UseItemByName` for bag matches. pfUI/SCRM macro integration replaces `SlashCmdList.USE` with the same route. These paths are therefore covered by observing those concrete use APIs.
+- **ClassicAPI secure action buttons:** `type="item"` routes either to `UseContainerItem` for explicit bag/slot attributes or `C_Item.UseItemByName`; `type="action"` routes to `UseAction`; `type="macro"` runs through the same macro execution path. Unknown custom verbs may execute arbitrary addon code and are covered only when they eventually call one of the observed item-use surfaces.
+
+Smallest complete strategy with the current APIs:
+1. Use exact location capture for `UseContainerItem` / `UseInventoryItem`; retain GUID alongside itemID where a physical instance must be followed across moves.
+2. Observe `C_Item.UseItemByName` independently; use exact itemID whenever the argument resolves directly and preserve the existing native fallback until name/instance resolution is proven for all cases.
+3. Observe `UseAction`; use exact `GetActionInfo` itemID when present.
+4. **Do not remove native item discovery for `UseAction` bag-instance entries while `GetActionInfo` returns nil itemID.** A truly scan-free exact implementation requires a ClassicAPI addition that exposes the action's bag-instance itemID and preferably item GUID/location.
+5. Prefer `hooksecurefunc` post-hooks where they preserve exact identity, but do not use a post-hook where consuming/moving the item can destroy the only exact location before it is captured.
 
 ## Recent Relevant Commits
 - `225f984253a26ea95e3888021a8e05135971ac01` — Start Cooline 3.0 development; bump `dev` metadata to `3.0.0-dev` after native release/preservation.
@@ -224,7 +244,7 @@ Design implications:
 ### Stage 3 — ClassicAPI-required 3.0 — ACTIVE
 1. **Done:** return to `dev` and bump metadata to `3.0.0-dev`.
 2. **Audit checkpoint complete:** verify ClassicAPI spell/item/GUID/event/hook surfaces and identify the action-bar bag-instance limitation described above.
-3. **Next:** finish the exact item-use route matrix before deleting native discovery: stock bag clicks (`UseContainerItem`), equipped uses (`UseInventoryItem`), ClassicAPI `C_Item.UseItemByName`, action buttons/`UseAction`, direct item bindings, ordinary `/use` macros, and supported custom/conditional macro execution.
+3. **Audit complete:** the exact item-use route matrix is documented above. Stock bag/equipped use, `C_Item.UseItemByName`, direct item bindings, supported SCRM/pfUI conditional `/use`, and item-by-ID action entries have observable exact routes. Current ClassicAPI still leaves `UseAction` bag-instance entries ambiguous because `GetActionInfo` returns `"item", nil`; native discovery must remain for that route until ClassicAPI exposes exact identity.
 4. Before/as the first 3.0 runtime code edit lands, bump `3.0.0-dev` to `3.0.1-dev`.
 5. Add an explicit ClassicAPI prerequisite check/metadata contract using `CLASSIC_API_VERSION`; 3.0 should fail clearly rather than silently fall back to native architecture.
 6. Replace broad spell discovery with `UNIT_SPELLCAST_SUCCEEDED` exact spell IDs and `C_Spell.GetSpellCooldown`.
@@ -252,6 +272,6 @@ Design implications:
 - The exact stable native commit is already preserved on `native-2.1`. The matching `v2.1.2` tag remains pending because tag creation is unavailable through the current connector; do not claim the tag exists.
 
 ## Exact Next Step
-Continue on `dev` from this handoff with the ClassicAPI-required `3.0.0-dev` line. Finish the item-use route matrix by tracing stock bag/equipped use, `C_Item.UseItemByName`, action-bar item entries (including the bag-instance case where `GetActionInfo` returns no itemID), direct item bindings and macro/custom-macro execution. From that audit, define the smallest complete observation strategy that provides exact itemID/GUID identity without broad native scans. Before/as the first addon-affecting 3.0 runtime change lands, bump to `3.0.1-dev`. Then implement the ClassicAPI prerequisite plus exact spell path and the proven item-use observation path in a coherent 3.0 delta; do not delete native item discovery until route coverage is demonstrated by code/runtime evidence.
+Continue on `dev` from this handoff with the ClassicAPI-required `3.0.0-dev` line. Before/as the first addon-affecting runtime change lands, bump to `3.0.1-dev`. Implement the explicit ClassicAPI prerequisite plus the exact `UNIT_SPELLCAST_SUCCEEDED` -> `C_Spell.GetSpellCooldown` spell path and the proven item-use observation paths for `UseContainerItem`, `UseInventoryItem`, `C_Item.UseItemByName`, and item-by-ID `UseAction`. Preserve the native item-discovery fallback for ambiguous `UseAction` bag-instance entries until ClassicAPI exposes exact action-item identity or runtime/code evidence proves another exact route. Do not claim the 3.0 item architecture scan-free until that gap is closed.
 
 
