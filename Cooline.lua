@@ -69,6 +69,8 @@ local optionsFrame
 local pendingItemUse
 local itemCooldownLocks = {}
 local ITEM_INTENT_WINDOW = 1.0
+local pendingSpellReconcile = false
+local pendingItemReconcile = false
 local RefreshRuntimeDriver
 
 local function CapturePendingItem(name, texture)
@@ -1202,6 +1204,16 @@ local function ReconcileAllCooldowns()
 	ReconcileItemCooldowns()
 end
 
+local function QueueSpellReconcile()
+	pendingSpellReconcile = true
+	RefreshRuntimeDriver()
+end
+
+local function QueueItemReconcile()
+	pendingItemReconcile = true
+	RefreshRuntimeDriver()
+end
+
 local COOLDOWN_PULSE_DURATION = 0.26
 
 local function TriggerCooldownPulse(spellName)
@@ -1297,15 +1309,29 @@ end
 
 local function RuntimeOnUpdate()
 	local now
+	local reconciledItems = false
 
 	if not initialised then
 		return
 	end
 
+	if pendingSpellReconcile then
+		pendingSpellReconcile = false
+		ReconcileSpellCooldowns()
+	end
+
+	if pendingItemReconcile then
+		pendingItemReconcile = false
+		ReconcileItemCooldowns()
+		reconciledItems = true
+	end
+
 	now = GetTime()
 	if bar.itemRetryAt and now >= bar.itemRetryAt then
 		bar.itemRetryAt = nil
-		ReconcileItemCooldowns()
+		if not reconciledItems then
+			ReconcileItemCooldowns()
+		end
 		if pendingItemUse and (now - pendingItemUse.time) <= ITEM_INTENT_WINDOW then
 			bar.itemRetryAt = now + 0.10
 		end
@@ -1319,7 +1345,7 @@ end
 
 RefreshRuntimeDriver = function()
 	local hasActive = next(activeCooldowns) ~= nil
-	local needsDriver = hasActive or bar.itemRetryAt ~= nil
+	local needsDriver = hasActive or bar.itemRetryAt ~= nil or pendingSpellReconcile or pendingItemReconcile
 
 	if bar.activeVisual ~= hasActive then
 		UpdateBarAlpha(hasActive)
@@ -2993,10 +3019,12 @@ bar:SetScript("OnEvent", function()
 			TriggerCooldownPulse(failedSpell)
 		end
 	elseif initialised and (event == "SPELL_UPDATE_COOLDOWN" or event == "SPELLS_CHANGED") then
-		ReconcileSpellCooldowns()
+		QueueSpellReconcile()
 	elseif initialised and (event == "BAG_UPDATE_COOLDOWN" or event == "BAG_UPDATE" or event == "UNIT_INVENTORY_CHANGED") then
-		ReconcileItemCooldowns()
+		QueueItemReconcile()
 	elseif initialised and event == "PLAYER_ENTERING_WORLD" then
+		pendingSpellReconcile = false
+		pendingItemReconcile = false
 		ReconcileAllCooldowns()
 	end
 end)
