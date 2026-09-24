@@ -2,14 +2,14 @@
 
 ## Current
 - Branch: `dev`.
-- Version: `2.1.2-dev` in `Cooline.toc`.
-- Current checked product tree before this status commit: `686aecb040545252492c9da59981beb902a6e3d4`. The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
-- Current runtime delta commit: `367fe609596950a34ae8d286388c18679fac7507` (`Finish native 2.1 performance pass`). Cleanup tree `686aecb040545252492c9da59981beb902a6e3d4` is product-identical; the intervening commits only added and removed the temporary Lua 5.0.2 compiler workflow.
-- Previously user-tested burst-coalescing runtime delta: `a9c53e8648c6c6d753c7b7327aab746222f0e5ec`, product-identical cleanup tree `554be40272d8a55e6a35cf5b7a1e90625fde8bbd`.
-- Previously user-tested runtime implementation: `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727` (`Optimize native cooldown reconciliation and rendering`), runtime-identical to checked tree `81331997c059320395838598d68adf5724ee2383`.
-- Stable baseline: `2.0.0` at `cdd502226b3e44b27d14fa2c855f0b93ae207c09` on `main`.
-- Goal: complete the native WoW 1.12.1 performance-focused `2.1.x` line first, release the final accepted `2.1.x` revision, preserve that native line, then develop `3.0.0` with ClassicAPI as a required runtime dependency.
-- Current scope boundary: native Stage 1 implementation and user runtime validation are complete. The combined final `2.1.2-dev` delta was user-tested successfully with no reported regression. Quantitative CPU/performance improvement remains unmeasured because the runtime environment has too many confounding variables. Next: promote the exact accepted native runtime to stable `2.1.2`, preserve it, then begin ClassicAPI-required `3.0.0-dev` work.
+- Version: `3.0.0-dev` in `Cooline.toc`.
+- Current dev branch head before this status commit: `225f984253a26ea95e3888021a8e05135971ac01` (`Start Cooline 3.0 development`). The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
+- Stable release: `2.1.2` on `main` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505` (`Release Cooline 2.1.2`). Its `Cooline.lua` blob exactly matches the user-tested final native runtime.
+- Permanent native preservation branch: `native-2.1` at the exact same stable commit `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`.
+- The planned lightweight tag `v2.1.2` is not yet created because the available GitHub connector exposes branch/ref movement but not tag creation. Do not misstate it as existing.
+- ClassicAPI audit source: `Seraphic8x2244/ClassicAPI` `master` at `7ab32df2aadc2171100aac859154085fcaed56b2`.
+- Goal: develop `3.0.x` as a ClassicAPI-required architectural rewrite while preserving the tested renderer/UI/SavedVariables behaviour from stable native `2.1.2`.
+- Current scope boundary: 2.1 is finished/released/preserved. 3.0 metadata is started; no 3.0 runtime rewrite has landed yet. The initial ClassicAPI spell/item/event capability audit is complete enough to constrain the design, but item-use route coverage must be finished before native item discovery is deleted.
 
 ## Current Design / Development Contract
 
@@ -42,11 +42,12 @@
 - The 3.0 design should prefer stable spell/item identifiers from ClassicAPI where available and avoid carrying forward native scan-based inference solely for compatibility.
 
 ### Active Decisions
-- Cooline 2.0.0 remains the accepted stable release until 2.1 is user-tested and promoted.
-- The next release line is native `2.1.x`, focused only on removing unnecessary background CPU/GC/UI work while preserving native-client support and current behaviour. Each addon-affecting development revision increments the patch version (`2.1.1-dev`, `2.1.2-dev`, ...); the stable release uses the final accepted numeric `2.1.x` version without `-dev`.
-- After stable 2.1 is released, preserve the exact final native revision with a matching `v2.1.x` tag and a permanent `native-2.1` branch before 3.0 replaces it on `main`. Creating the preservation branch immediately after the 2.1 release is preferred; at minimum it must exist before 3.0 promotion.
-- After the 2.1 checkpoint, `dev` becomes `3.0.0-dev` and ClassicAPI becomes a required runtime dependency.
-- 3.0 is an architectural modernization, not a dual-path compatibility build. Do not retain broad native polling/scanning merely to support non-ClassicAPI clients.
+- Stable `main` is now `2.1.2` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`; the exact same commit is preserved on `native-2.1`.
+- `dev` is now the ClassicAPI-required `3.0.x` line. It is not a dual-path compatibility build.
+- ClassicAPI is a hard prerequisite for 3.0. Detect it via `CLASSIC_API_VERSION` and document the dependency explicitly; do not keep broad native scanning merely to support clients without the DLL.
+- Every addon-affecting 3.0 development revision must bump the patch version under the rulebook. The first 3.0 runtime/code edit after the current metadata-only `3.0.0-dev` checkpoint must therefore bump to `3.0.1-dev` before/as it lands.
+- Preserve existing SavedVariables compatibility, filter behaviour, renderer/lifecycle improvements, visual layout, failed-cast pulse intent and user-facing options unless a ClassicAPI-driven architectural change explicitly requires otherwise.
+- Do not delete the native item-discovery path until the exact use-route matrix is resolved for bag clicks, equipped items, action buttons, item bindings, ordinary macros and supported conditional/custom macro routes.
 - A Spells/Items options-panel re-layout remains only an optional future idea and is outside both current performance stages unless separately approved.
 
 ## Performance Audit Baseline
@@ -66,19 +67,32 @@ The 2.0.0 runtime audit found the following avoidable background work:
 
 The performance objective is not raid-specific. Raid conditions merely make cumulative addon overhead most visible. The goal is to eliminate unnecessary work in all play states, especially idle/background work that compounds with other addons.
 
-## ClassicAPI 3.0 Opportunity
-ClassicAPI currently provides capabilities that can remove much of Cooline's native inference/scanning layer:
+## ClassicAPI 3.0 Audit
 
-- `UNIT_SPELLCAST_SUCCEEDED` with `unit, castGUID, spellID, spellName, rank` for successful local-player casts.
-- `C_Spell.GetSpellCooldown(spellIdentifier)` for direct cooldown lookup by spell ID/name/link without requiring a spellbook-slot walk.
-- `GetItemCooldown(itemInfo)` / `C_Container.GetItemCooldown` for direct item cooldown lookup by item identifier rather than physical slot.
-- `BAG_UPDATE_DELAYED` to coalesce multiple bag changes into one per-frame notification.
-- `PLAYER_EQUIPMENT_CHANGED(equipmentSlot, hasCurrent)` to identify the changed equipment slot directly.
-- `hooksecurefunc` and richer action/macro/item APIs that may allow cleaner item-use observation than replacing global functions.
+Audit source: `Seraphic8x2244/ClassicAPI` `master` at `7ab32df2aadc2171100aac859154085fcaed56b2`.
 
-Before the 3.0 item path is designed, audit every relevant item-use route under ClassicAPI: bag clicks, equipped on-use items/trinkets, action buttons, `/use` macros, conditional macros and any supported client-specific route. Do not delete fallback discovery until exact item identity/cooldown behaviour is demonstrated for the intended routes.
+Confirmed capabilities:
+- `UNIT_SPELLCAST_SUCCEEDED(unit, castGUID, spellID, spellName, rank)` provides exact successful-cast spell identity.
+- `C_Spell.GetSpellCooldown(spellIdentifier)` returns direct cooldown data without a spellbook-slot scan.
+- `GetItemCooldown(itemInfo)` / `C_Container.GetItemCooldown(itemID)` query an item's ON_USE spell cooldown directly by item identity; no physical bag/equipment slot is required.
+- `C_Item.GetItemGUID(itemLocation)` returns a per-instance GUID stable across bag/equipment moves during the session; `C_Item.GetItemLocation(itemGUID)` resolves that same instance's current location; `C_Item.GetItemID(itemLocation)` provides the itemID.
+- `C_Container.GetContainerItemID(bag, slot)` provides direct bag-slot item IDs.
+- `BAG_UPDATE_DELAYED` and `PLAYER_EQUIPMENT_CHANGED(equipmentSlot, hasCurrent)` provide narrower inventory/equipment change signals.
+- `hooksecurefunc` provides post-call observation without replacing the original global.
+- `GetActionInfo(slot)` distinguishes action-bar spells/macros/items. Item actions stored by itemID return that ID, but item actions stored as a bag-instance currently return `"item", nil`; therefore action-slot inspection alone cannot guarantee exact identity for every item action.
+- ClassicAPI exposes `C_Item.UseItemByName(itemInfo [, unit])`; it can bypass stock `UseContainerItem`, so 3.0 must account for it rather than assuming hooks on native bag/inventory use functions observe every item activation.
+- ClassicAPI exposes `GetMacroSpell` for spell macros, but no equivalent `GetMacroItem` surface was found in the audited API. Item/macro identity therefore needs route-specific handling rather than a blanket macro lookup assumption.
+
+Design implications:
+- Spell tracking can become exact and cast-driven: successful player cast -> exact spellID -> direct cooldown lookup -> existing renderer.
+- Item cooldown state should be keyed by stable itemID for cooldown semantics, with item GUID/location used when the exact physical instance matters for use observation across slot moves.
+- Native shared-cooldown signature/name locking should be removed only after exact item-use observation is proven for all intended routes.
+- The existing 2.1 renderer/lifecycle optimizations remain valuable and should be retained; the broad native discovery scans are the part intended for replacement.
 
 ## Recent Relevant Commits
+- `225f984253a26ea95e3888021a8e05135971ac01` — Start Cooline 3.0 development; bump `dev` metadata to `3.0.0-dev` after native release/preservation.
+- `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505` — Release Cooline `2.1.2` on `main`; exact user-tested Lua runtime with stable TOC metadata. `native-2.1` points to this same commit.
+- `c0b99ad8fae334ea978e669bb938e83682c94383` — Record final Cooline 2.1 runtime pass before promotion.
 - `686aecb040545252492c9da59981beb902a6e3d4` — Remove temporary Lua 5.0.2 check after the final native Stage 1 delta passed.
 - `8c2799c4fd6067a836cc1454aedee87a16c57c1e` — Add temporary Lua 5.0.2 compiler workflow for the final native Stage 1 delta.
 - `367fe609596950a34ae8d286388c18679fac7507` — Finish native 2.1 performance pass: spellbook/filter caching, reconciliation scratch reuse/allocation cleanup, and flash-only filter-row `OnUpdate`.
@@ -188,7 +202,7 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 
 ## Planned / Next Work
 
-### Stage 1 — Native 2.1 performance release
+### Stage 1 — Native 2.1 performance release — COMPLETE
 1. **Implemented:** bump the TOC from `2.0.0-dev` to `2.1.0-dev` before runtime edits.
 2. **Implemented:** remove the permanent 0.50-second full `ReconcileAllCooldowns()` poll.
 3. **Implemented:** split spell and item reconciliation so events and filter changes refresh only the relevant domain.
@@ -201,24 +215,25 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 10. **Next:** promote the exact accepted native runtime to stable `2.1.2`, tag `v2.1.2` where repository tooling permits, preserve it on `native-2.1`, then move `dev` to `3.0.0-dev` for ClassicAPI-required development.
 11. Do not add further native optimization work unless a concrete stable-line regression is discovered.
 
-### Stage 2 — Preserve the final native line
-1. For the current final Stage 1 plan, tag the accepted native release as `v2.1.2`.
-2. Preserve that exact native release line on permanent branch `native-2.1`.
-3. The branch may be created immediately after 2.1 promotion; regardless, it must exist before 3.0 is promoted over 2.1 on `main`.
-4. Treat `native-2.1` as the known-good no-ClassicAPI fallback/reference line. Do not casually merge 3.x ClassicAPI-required architecture into it.
+### Stage 2 — Preserve the final native line — RELEASE/BRANCH COMPLETE
+1. **Released:** stable `2.1.2` is on `main` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`.
+2. **Preserved:** permanent `native-2.1` points to that exact same commit.
+3. **Tag pending tooling:** intended tag is `v2.1.2`; the current GitHub connector does not expose tag creation, so the tag must not be claimed as present.
+4. Treat `native-2.1` as the known-good no-ClassicAPI fallback/reference line. Do not merge 3.x ClassicAPI-required architecture into it.
 
-### Stage 3 — ClassicAPI-required 3.0
-1. Return to `dev` after the 2.1 release/preservation checkpoint and bump to `3.0.0-dev`.
-2. Record ClassicAPI as a required runtime prerequisite in the addon metadata/user documentation and this development contract as appropriate.
-3. Audit exact item-use identification across all supported use routes before deleting the native item-discovery path.
-4. Replace broad spell discovery with ClassicAPI's exact successful-cast spell IDs and direct `C_Spell.GetSpellCooldown` lookups.
-5. Replace physical-slot item cooldown discovery with direct item-ID cooldown lookups wherever exact item identity is available.
-6. Prefer `BAG_UPDATE_DELAYED`, `PLAYER_EQUIPMENT_CHANGED` and other precise ClassicAPI events over broad Vanilla inventory notifications.
-7. Use `hooksecurefunc`/ClassicAPI action-macro facilities where they provide a cleaner observation path than replacing globals.
-8. Carry forward the renderer/lifecycle improvements proven in 2.1, but do not preserve the native scan architecture merely for compatibility.
-9. Reassess whether any remaining polling is actually required. Any retained poll must have a documented correctness reason and the narrowest practical scope/frequency.
-10. Run full static/Lua compatibility checks plus ClassicAPI-targeted runtime tests. Keep `main` on stable 2.1 until the 3.0 delta is user-tested and accepted.
-11. Promote accepted `3.0.0` to `main` only after confirming the final native `v2.1.x` tag and `native-2.1` branch preserve the exact stable native release.
+### Stage 3 — ClassicAPI-required 3.0 — ACTIVE
+1. **Done:** return to `dev` and bump metadata to `3.0.0-dev`.
+2. **Audit checkpoint complete:** verify ClassicAPI spell/item/GUID/event/hook surfaces and identify the action-bar bag-instance limitation described above.
+3. **Next:** finish the exact item-use route matrix before deleting native discovery: stock bag clicks (`UseContainerItem`), equipped uses (`UseInventoryItem`), ClassicAPI `C_Item.UseItemByName`, action buttons/`UseAction`, direct item bindings, ordinary `/use` macros, and supported custom/conditional macro execution.
+4. Before/as the first 3.0 runtime code edit lands, bump `3.0.0-dev` to `3.0.1-dev`.
+5. Add an explicit ClassicAPI prerequisite check/metadata contract using `CLASSIC_API_VERSION`; 3.0 should fail clearly rather than silently fall back to native architecture.
+6. Replace broad spell discovery with `UNIT_SPELLCAST_SUCCEEDED` exact spell IDs and `C_Spell.GetSpellCooldown`.
+7. Replace physical-slot item cooldown discovery with direct itemID cooldown queries wherever exact identity is available; use item GUID/location to follow exact instances across moves when needed.
+8. Prefer `BAG_UPDATE_DELAYED`, `PLAYER_EQUIPMENT_CHANGED` and other precise ClassicAPI events over broad Vanilla inventory notifications.
+9. Prefer `hooksecurefunc` observation over replacing globals where it provides complete route coverage.
+10. Carry forward 2.1 renderer/lifecycle wins; do not retain native scan architecture merely for non-ClassicAPI compatibility.
+11. Any retained polling/reconciliation must have a documented correctness reason and narrowest practical scope/frequency.
+12. Run the real Lua 5.0.2 compiler/static checks plus a consolidated ClassicAPI runtime test. Keep `main` on stable `2.1.2` until 3.0 is user-tested and accepted.
 
 ## Deferred / Out of Scope
 - UI redesign or unrelated feature additions during the 2.1 performance pass.
@@ -229,14 +244,14 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - New debug tooling unless required to validate the performance/runtime rewrite.
 
 ## Release / Promotion Notes
-- Stable `main` currently remains `2.0.0`. It must not be used as the 2.1 or 3.0 development branch.
+- Stable `main` is `2.1.2` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`; do not develop 3.0 directly on `main`.
 - Current main-only/release-only content: no extra main-only files. Stable `main` intentionally contains only `Cooline.lua`, stable `Cooline.toc`, `README.md`, `artwork/` and `locales/`; preserve stable TOC Title/Version metadata and do not copy development docs to `main`.
 - Known 2.0 validation debt: timeline-overlay, font-preview, locale-filter migration, non-English cooldown-failure matching, opacity clamping and supported-locale behaviour were not each individually/exhaustively exercised in every path or locale before/after the accepted 2.0.0 release. This is historical release provenance, not scheduled maintenance work.
 - 2.1 must remain installable without ClassicAPI or any other DLL/client extension.
 - 3.0 will require ClassicAPI; that dependency is a deliberate major-version boundary.
-- The exact stable final `2.1.x` commit must be tagged with its matching version and preserved on `native-2.1` before 3.0 replaces it on `main`.
+- The exact stable native commit is already preserved on `native-2.1`. The matching `v2.1.2` tag remains pending because tag creation is unavailable through the current connector; do not claim the tag exists.
 
 ## Exact Next Step
-Promote the exact accepted native runtime from `2.1.2-dev` to stable `2.1.2` on `main`, preserving main's release-only file shape and changing only stable TOC title/version metadata beyond the tested runtime. Preserve that exact stable commit on `native-2.1` and tag `v2.1.2` where repository tooling permits. Then return to `dev`, bump to `3.0.0-dev`, record ClassicAPI as required, and begin the documented Stage 3 item-use/identity audit before deleting native discovery paths.
+Continue on `dev` from this handoff with the ClassicAPI-required `3.0.0-dev` line. Finish the item-use route matrix by tracing stock bag/equipped use, `C_Item.UseItemByName`, action-bar item entries (including the bag-instance case where `GetActionInfo` returns no itemID), direct item bindings and macro/custom-macro execution. From that audit, define the smallest complete observation strategy that provides exact itemID/GUID identity without broad native scans. Before/as the first addon-affecting 3.0 runtime change lands, bump to `3.0.1-dev`. Then implement the ClassicAPI prerequisite plus exact spell path and the proven item-use observation path in a coherent 3.0 delta; do not delete native item discovery until route coverage is demonstrated by code/runtime evidence.
 
 
