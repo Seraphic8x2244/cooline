@@ -60,6 +60,7 @@ local STYLE_PRESETS = {
 
 local bar = CreateFrame("Frame", "CoolineBar", UIParent)
 local cooldowns = {}
+local activeCooldowns = {}
 local initialised = false
 local ToggleOptions
 local ApplyBarLockState
@@ -68,6 +69,7 @@ local optionsFrame
 local pendingItemUse
 local itemCooldownLocks = {}
 local ITEM_INTENT_WINDOW = 1.0
+local RefreshRuntimeDriver
 
 local function CapturePendingItem(name, texture)
 	if not name or name == "" then
@@ -79,10 +81,13 @@ local function CapturePendingItem(name, texture)
 		texture = texture,
 		time = GetTime(),
 	}
+
+	bar.itemRetryAt = pendingItemUse.time
+	if initialised and RefreshRuntimeDriver then
+		RefreshRuntimeDriver()
+	end
 end
 
-local scanElapsed = 0
-local SCAN_INTERVAL = 0.50
 local visuals
 local GetSpellCount
 
@@ -583,6 +588,7 @@ local function ApplyVisualLayout()
 		local size = GetIconSizeForKey(name)
 		cd:SetWidth(size)
 		cd:SetHeight(size)
+		cd.renderSize = size
 	end
 
 	LayoutLabels()
@@ -590,6 +596,8 @@ end
 
 local function UpdateBarAlpha(active)
 	local alpha
+
+	bar.activeVisual = active and true or false
 	local i
 
 	if active then
@@ -913,6 +921,7 @@ local function EnsureCooldown(key)
 		size = GetIconSizeForKey(key)
 		cd:SetWidth(size)
 		cd:SetHeight(size)
+		cd.renderSize = size
 		cd:SetBackdrop({
 			bgFile = [[Interface\AddOns\Cooline\artwork\backdrop.tga]]
 		})
@@ -927,6 +936,22 @@ local function EnsureCooldown(key)
 	end
 
 	return cd
+end
+
+local function ActivateCooldown(key, cd)
+	activeCooldowns[key] = cd
+	if not cd:IsShown() then
+		cd:Show()
+	end
+end
+
+local function DeactivateCooldown(key, cd)
+	activeCooldowns[key] = nil
+	if cd:IsShown() then
+		cd:Hide()
+	end
+	cd.endTime = nil
+	cd.pulseStart = nil
 end
 
 local function ScanItems(seen)
@@ -1008,7 +1033,7 @@ local function ScanItems(seen)
 				cd.endTime = candidate.endTime
 				cd.icon:SetTexture(pendingItemUse.texture or candidate.texture)
 				cd:SetBackdropColor(0, 0, 0, 1)
-				cd:Show()
+				ActivateCooldown(key, cd)
 				seen[key] = true
 
 				pendingItemUse = nil
@@ -1037,7 +1062,7 @@ local function ScanItems(seen)
 					cd.startTime = candidate.startTime
 					cd.duration = candidate.duration
 					cd.endTime = candidate.endTime
-					cd:Show()
+					ActivateCooldown(key, cd)
 					seen[key] = true
 				end
 			end
@@ -1059,7 +1084,7 @@ local function ScanItems(seen)
 			cd.endTime = candidate.endTime
 			cd.icon:SetTexture(candidate.texture)
 			cd:SetBackdropColor(0, 0, 0, 1)
-			cd:Show()
+			ActivateCooldown(key, cd)
 			seen[key] = true
 
 			-- Do not create another fallback identity for the same shared cooldown.
@@ -1101,12 +1126,10 @@ local function CooldownKeyAllowed(key)
 	return true
 end
 
-local function ReconcileAllCooldowns()
+local function ReconcileSpellCooldowns()
 	local seen = {}
 	local name, cd
 	local now = GetTime()
-
-	-- Re-scan spells into the same active set.
 	local spellCount = GetSpellCount()
 	local id
 	local spellName
@@ -1125,32 +1148,58 @@ local function ReconcileAllCooldowns()
 					key = "spell:" .. spellName
 					cd = EnsureCooldown(key)
 					texture = GetSpellTexture(id, BOOKTYPE_SPELL)
-
 					cd.startTime = startTime
 					cd.duration = duration
 					cd.endTime = startTime + duration
 					cd.icon:SetTexture(texture)
 					cd:SetBackdropColor(0.8, 0.4, 0, 1)
-					cd:Show()
+					ActivateCooldown(key, cd)
 					seen[key] = true
 				end
 			end
 		end
 	end
 
-	ScanItems(seen)
-
-	for name, cd in pairs(cooldowns) do
-		if not CooldownKeyAllowed(name) then
-			cd:Hide()
-			cd.endTime = nil
-			cd.pulseStart = nil
-		elseif not seen[name] and (not cd.endTime or cd.endTime <= now) then
-			cd:Hide()
-			cd.endTime = nil
-			cd.pulseStart = nil
+	for name, cd in pairs(activeCooldowns) do
+		if string.sub(name, 1, 6) == "spell:" then
+			if not CooldownKeyAllowed(name) then
+				DeactivateCooldown(name, cd)
+			elseif not seen[name] and (not cd.endTime or cd.endTime <= now) then
+				DeactivateCooldown(name, cd)
+			end
 		end
 	end
+
+	RefreshRuntimeDriver()
+end
+
+local function ReconcileItemCooldowns()
+	local seen = {}
+	local name, cd
+	local now = GetTime()
+
+	ScanItems(seen)
+
+	for name, cd in pairs(activeCooldowns) do
+		if string.sub(name, 1, 5) == "item:" then
+			if not CooldownKeyAllowed(name) then
+				DeactivateCooldown(name, cd)
+			elseif not seen[name] and (not cd.endTime or cd.endTime <= now) then
+				DeactivateCooldown(name, cd)
+			end
+		end
+	end
+
+	if not pendingItemUse then
+		bar.itemRetryAt = nil
+	end
+
+	RefreshRuntimeDriver()
+end
+
+local function ReconcileAllCooldowns()
+	ReconcileSpellCooldowns()
+	ReconcileItemCooldowns()
 end
 
 local COOLDOWN_PULSE_DURATION = 0.26
@@ -1187,12 +1236,12 @@ local function TriggerCooldownPulse(spellName)
 	if cd and cd.endTime and cd.endTime > now then
 		-- Every failed cast restarts the pulse.
 		cd.pulseStart = now
+		RefreshRuntimeDriver()
 	end
 end
 
 local function Render()
 	local now = GetTime()
-	local anyActive = false
 	local name, cd
 	local remaining
 	local offset
@@ -1203,59 +1252,89 @@ local function Render()
 	local pulse
 	local targetScale
 
-	for name, cd in pairs(cooldowns) do
-		if cd.endTime then
-			remaining = cd.endTime - now
-
-			if remaining > 0 then
-				anyActive = true
-				offset = TimelineOffset(remaining)
-
+	for name, cd in pairs(activeCooldowns) do
+		remaining = cd.endTime and (cd.endTime - now) or 0
+		if remaining > 0 then
+			offset = TimelineOffset(remaining)
+			if cd.renderLevel ~= level then
 				cd:SetFrameLevel(level)
-				level = level + 1
+				cd.renderLevel = level
+			end
+			level = level + 1
+			baseSize = GetIconSizeForKey(name)
+			drawSize = baseSize
 
-				baseSize = GetIconSizeForKey(name)
-				drawSize = baseSize
-
-				if cd.pulseStart then
-					progress = (now - cd.pulseStart) / COOLDOWN_PULSE_DURATION
-
-					if progress >= 1 then
-						cd.pulseStart = nil
-					elseif progress >= 0 then
-						-- Smooth triangle: normal -> selected scale -> normal.
-						if progress < 0.5 then
-							pulse = progress * 2
-						else
-							pulse = (1 - progress) * 2
-						end
-
-						targetScale = visuals.cooldownanimate / 100
-						drawSize = baseSize * (1 + ((targetScale - 1) * pulse))
+			if cd.pulseStart then
+				progress = (now - cd.pulseStart) / COOLDOWN_PULSE_DURATION
+				if progress >= 1 then
+					cd.pulseStart = nil
+				elseif progress >= 0 then
+					if progress < 0.5 then
+						pulse = progress * 2
+					else
+						pulse = (1 - progress) * 2
 					end
+					targetScale = visuals.cooldownanimate / 100
+					drawSize = baseSize * (1 + ((targetScale - 1) * pulse))
 				end
+			end
 
-				-- Only protect the frame API from invalid dimensions.
-				if drawSize < 1 then
-					drawSize = 1
-				end
+			if drawSize < 1 then
+				drawSize = 1
+			end
 
+			if cd.renderSize ~= drawSize then
 				cd:SetWidth(drawSize)
 				cd:SetHeight(drawSize)
-				PlaceOnTimeline(cd, offset)
-				cd:SetAlpha(1)
-				cd:Show()
-			else
-				cd:Hide()
-				cd.endTime = nil
-				cd.pulseStart = nil
+				cd.renderSize = drawSize
 			end
+			PlaceOnTimeline(cd, offset)
+		else
+			DeactivateCooldown(name, cd)
+		end
+	end
+end
+
+local function RuntimeOnUpdate()
+	local now
+
+	if not initialised then
+		return
+	end
+
+	now = GetTime()
+	if bar.itemRetryAt and now >= bar.itemRetryAt then
+		bar.itemRetryAt = nil
+		ReconcileItemCooldowns()
+		if pendingItemUse and (now - pendingItemUse.time) <= ITEM_INTENT_WINDOW then
+			bar.itemRetryAt = now + 0.10
 		end
 	end
 
-	UpdateBarAlpha(anyActive)
+	if next(activeCooldowns) then
+		Render()
+	end
+	RefreshRuntimeDriver()
 end
 
+RefreshRuntimeDriver = function()
+	local hasActive = next(activeCooldowns) ~= nil
+	local needsDriver = hasActive or bar.itemRetryAt ~= nil
+
+	if bar.activeVisual ~= hasActive then
+		UpdateBarAlpha(hasActive)
+	end
+
+	if needsDriver then
+		if not bar.runtimeDriver then
+			bar.runtimeDriver = true
+			bar:SetScript("OnUpdate", RuntimeOnUpdate)
+		end
+	elseif bar.runtimeDriver then
+		bar.runtimeDriver = nil
+		bar:SetScript("OnUpdate", nil)
+	end
+end
 
 -- ============================================================================
 -- Options
@@ -1950,7 +2029,7 @@ local function AddSpellFromBox()
 	FlashFilterRow(FindSpellRowByName(storedName))
 
 	-- Reconcile immediately so filter changes take effect now.
-	ReconcileAllCooldowns()
+	ReconcileSpellCooldowns()
 end
 
 
@@ -2057,7 +2136,7 @@ local function AddItemFromBox()
 
 	RefreshItemRows()
 	FlashFilterRow(FindItemRowByName(storedName))
-	ReconcileAllCooldowns()
+	ReconcileItemCooldowns()
 end
 
 local function ShowOptionsPage(page)
@@ -2340,7 +2419,7 @@ local function BuildSpellsPage()
 			if this:GetParent().dataIndex then
 				RemoveSpellAtIndex(this:GetParent().dataIndex)
 				RefreshSpellRows()
-				ReconcileAllCooldowns()
+				ReconcileSpellCooldowns()
 			end
 		end)
 
@@ -2387,7 +2466,7 @@ local function BuildSpellsPage()
 
 		optionsFrame.spellOffset = 0
 		RefreshSpellRows()
-		ReconcileAllCooldowns()
+		ReconcileSpellCooldowns()
 	end)
 
 	optionsFrame.spellAdd:SetScript("OnEnterPressed", function()
@@ -2510,7 +2589,7 @@ local function BuildItemsPage()
 			if this:GetParent().dataIndex then
 				RemoveItemAtIndex(this:GetParent().dataIndex)
 				RefreshItemRows()
-				ReconcileAllCooldowns()
+				ReconcileItemCooldowns()
 			end
 		end)
 
@@ -2552,7 +2631,7 @@ local function BuildItemsPage()
 		end
 		optionsFrame.itemOffset = 0
 		RefreshItemRows()
-		ReconcileAllCooldowns()
+		ReconcileItemCooldowns()
 	end)
 
 	optionsFrame.itemAdd:SetScript("OnEnterPressed", function()
@@ -2759,6 +2838,7 @@ local function BindAppearanceScripts()
 		value = floor(this:GetValue() + 0.5)
 		visuals.activealpha = value / 100
 		this.edit:SetText(value .. "%")
+		UpdateBarAlpha(next(activeCooldowns) ~= nil)
 	end)
 
 	optionsFrame.inactive:SetScript("OnValueChanged", function()
@@ -2767,6 +2847,7 @@ local function BindAppearanceScripts()
 		value = floor(this:GetValue() + 0.5)
 		visuals.inactivealpha = value / 100
 		this.edit:SetText(value .. "%")
+		UpdateBarAlpha(next(activeCooldowns) ~= nil)
 	end)
 
 	optionsFrame.length.edit:SetScript("OnEnterPressed", function()
@@ -2814,6 +2895,7 @@ local function BindAppearanceScripts()
 		if value < 0 then value = 0 end
 		if value > 100 then value = 100 end
 		visuals.activealpha = value / 100
+		UpdateBarAlpha(next(activeCooldowns) ~= nil)
 		optionsFrame.updating = true
 		optionsFrame.active:SetValue(value)
 		optionsFrame.updating = false
@@ -2829,6 +2911,7 @@ local function BindAppearanceScripts()
 		if value < 0 then value = 0 end
 		if value > 100 then value = 100 end
 		visuals.inactivealpha = value / 100
+		UpdateBarAlpha(next(activeCooldowns) ~= nil)
 		optionsFrame.updating = true
 		optionsFrame.inactive:SetValue(value)
 		optionsFrame.updating = false
@@ -2909,21 +2992,11 @@ bar:SetScript("OnEvent", function()
 		if failedSpell then
 			TriggerCooldownPulse(failedSpell)
 		end
-	elseif initialised then
+	elseif initialised and (event == "SPELL_UPDATE_COOLDOWN" or event == "SPELLS_CHANGED") then
+		ReconcileSpellCooldowns()
+	elseif initialised and (event == "BAG_UPDATE_COOLDOWN" or event == "BAG_UPDATE" or event == "UNIT_INVENTORY_CHANGED") then
+		ReconcileItemCooldowns()
+	elseif initialised and event == "PLAYER_ENTERING_WORLD" then
 		ReconcileAllCooldowns()
 	end
-end)
-
-bar:SetScript("OnUpdate", function()
-	if not initialised then
-		return
-	end
-
-	scanElapsed = scanElapsed + arg1
-	if scanElapsed >= SCAN_INTERVAL then
-		scanElapsed = 0
-		ReconcileAllCooldowns()
-	end
-
-	Render()
 end)
