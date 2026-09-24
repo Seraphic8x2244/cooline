@@ -93,7 +93,7 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - Client Default bar-font inheritance was user-confirmed.
 - The user accepted the migrated addon state and Qiraji-blue Cooline branding as good.
 - Stable release `2.0.0` was accepted as the finished functional baseline.
-- First `2.1.0-dev` checkpoint user-verified on the runtime-identical product tree from `81331997c059320395838598d68adf5724ee2383` / implementation commit `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727`: ordinary spell cooldowns, potion/consumable cooldown, rapid/spam-click casting, equipped on-use trinket cooldown, `/reload` recovery of an active cooldown, trinket swapping with a 30-second cooldown discovered on equip, failed-cast pulse behaviour, and adding/removing filters all worked correctly.
+- First `2.1.0-dev` checkpoint user-verified on the runtime-identical product tree from `81331997c059320395838598d68adf5724ee2383` / implementation commit `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727`: ordinary spell cooldowns, potion/consumable cooldown, rapid/spam-click casting, equipped on-use trinket cooldown, `/reload` recovery of an active cooldown, trinket swapping with a 30-second cooldown discovered on equip, failed-cast pulse behaviour, adding/removing filters all worked correctly, and an active cooldown survived an instance zoning/loading-screen transition.
 
 ## Implemented / Runtime-Tested Checkpoint
 - TOC was bumped from `2.0.0-dev` to `2.1.0-dev` in its own commit before any runtime edit.
@@ -122,7 +122,7 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 ## Current Issues
 - The first `2.1.0-dev` performance delta has passed the targeted functional runtime paths exercised so far; no runtime regression was reported in those paths.
 - Quantitative CPU/performance improvement is not proven by user measurement because too many environmental variables make an informal before/after comparison unreliable. The architectural reductions remain statically established: no permanent 0.50-second full reconciliation, no permanent idle renderer, active-only rendering, and domain-split reconciliation.
-- Zoning/world-entry recovery, an explicit cooldown-reset case, spellbook-change recovery, and exhaustive shared-item cooldown identity were not exercised in this runtime pass. These remain untested coverage, not known failures.
+- Zoning/world-entry recovery was subsequently user-verified: an active cooldown survived an instance swap/loading-screen transition. An explicit cooldown-reset case, spellbook-change recovery, and exhaustive shared-item cooldown identity remain untested coverage, not known failures.
 - WoW 1.12.1 provides limited information for identifying some shared item cooldowns, so affected item identification remains best-effort on the native line.
 - Non-English behaviour has not been exhaustively runtime-tested across every supported locale.
 - No known active correctness regression exists in the stable `2.0.0` baseline or in the exercised `2.1.0-dev` checkpoint paths.
@@ -131,15 +131,15 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 
 ### Last Runtime Test
 - Version/commit: `2.1.0-dev` on the runtime-identical product tree at `81331997c059320395838598d68adf5724ee2383`, implementation commit `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727`; the test was conducted from handoff/status head `ccee0d3ecb5a4e401248e001c46a80f7045d3796`.
-- Passed: ordinary spell cooldowns; potion/consumable cooldown; rapid/spam-click behaviour; equipped on-use trinket cooldown; `/reload` preserved/reconstructed an active cooldown; trinket swapping correctly discovered a 30-second cooldown on equip; failed-cast pulse; adding/removing filters updated the timeline correctly.
+- Passed: ordinary spell cooldowns; potion/consumable cooldown; rapid/spam-click behaviour; equipped on-use trinket cooldown; `/reload` preserved/reconstructed an active cooldown; trinket swapping correctly discovered a 30-second cooldown on equip; failed-cast pulse; adding/removing filters updated the timeline correctly; active cooldown survived an instance zoning/loading-screen transition.
 - Failed: No failure reported in the exercised paths.
 - Performance result: no reliable quantitative before/after judgment; environmental variability is too high. Do not claim a measured CPU improvement from this test.
-- Not tested in this pass: zoning/world-entry recovery, an explicit cooldown-reset case, spellbook-change recovery, exhaustive shared-item cooldown identity, exhaustive per-locale coverage.
+- Not tested in this pass: an explicit cooldown-reset case, spellbook-change recovery, exhaustive shared-item cooldown identity, exhaustive per-locale coverage.
 
 ### Next Runtime Test
 - No additional test is required before evaluating the remaining Stage 1 optimization candidates; the first checkpoint has a clear functional pass result.
 - Any newly selected Stage 1 optimization becomes a fresh untested delta and must receive its own targeted runtime validation after static review and a real Lua 5.0.2 compiler check.
-- When convenient, zoning/world-entry recovery and a true cooldown-reset case remain useful opportunistic coverage for the already-passed checkpoint, but they are not documented as failures or blockers.
+- A true cooldown-reset case remains optional opportunistic coverage for the already-passed checkpoint; it is not a blocker. Spellbook-change recovery and exhaustive shared-item identity are also untested but are not known failures.
 - 3.0 requires a separate future runtime pass after its ClassicAPI-driven architecture is implemented; successful 2.1 testing does not authorize or validate 3.0.
 
 ## Planned / Next Work
