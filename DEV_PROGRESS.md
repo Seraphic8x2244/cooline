@@ -6,8 +6,8 @@
 - Development/runtime baseline before this documentation-only workflow migration: `0d4f484e4396aa276c7249ab895c6dbfcf92cccc` (`Mark Cooline 2.0.0 complete`).
 - Current handoff: the documentation-migration commit containing this file on `dev`; verify the actual remote `dev` head before new work.
 - Stable baseline: `2.0.0` at `cdd502226b3e44b27d14fa2c855f0b93ae207c09` on `main`.
-- Goal: Cooline 2.0.0 is feature-complete for now; development is paused by user decision.
-- Current scope boundary: No active feature work. Resume only after defining a new development version and scope.
+- Goal: Cooline 2.0.0 is complete and the project is in maintenance mode.
+- Current scope boundary: No active feature development or scheduled validation work. Resume development only for a concrete bug fix, compatibility need or deliberately approved feature, with a new development version/scope defined first.
 
 ## Current Design / Development Contract
 
@@ -34,8 +34,8 @@
 - Supported locale files remain `enUS`, `deDE`, `frFR`, `esES`, `koKR`, `zhCN` and `zhTW`.
 
 ### Active Decisions
-- Cooline 2.0.0 is accepted as the finished release for the current scope.
-- No further UI redesign, feature expansion or debug tooling is active.
+- Cooline 2.0.0 is accepted as the finished release for the current scope and Cooline is now in maintenance mode.
+- No routine development, redesign, feature expansion, debug tooling or maintenance-mode retesting is scheduled.
 - A Spells/Items options-panel re-layout remains only an optional future idea.
 - WoW 1.12.1 item cooldown identification remains best-effort where the client cannot reliably identify shared item cooldowns; do not misrepresent that client limitation as exact tracking.
 
@@ -54,13 +54,8 @@
 - Stable release `2.0.0` was accepted as the finished release for the current scope.
 
 ## Implemented / Awaiting Runtime Test
-The following shipped in the accepted 2.0.0 state but were not individually or exhaustively runtime-verified in every relevant path:
-- Dedicated higher-strata timeline-label overlay.
-- Core-integrated font selection and Cooline-owned font preview popup.
-- Locale-scoped spell/item filter migration.
-- Non-English cooldown-failure matching in the core event path.
-- Source-level clamping for opacity SavedVariables and typed input.
-- Exhaustive behaviour across all supported non-English clients/locales.
+- None pending as a maintenance-mode requirement.
+- Some 2.0.0 behaviour was not individually/exhaustively exercised in every path or locale before release; that historical validation debt is retained under Release / Promotion Notes and does not create a standing retest obligation.
 
 ## Static / Automated Checks
 - Static audit confirmed every newly created FontString receives a font/font object before text is assigned.
@@ -82,22 +77,23 @@ The following shipped in the accepted 2.0.0 state but were not individually or e
 - Not tested: Exhaustive per-locale coverage and individual exhaustive runtime validation of every item listed under Implemented / Awaiting Runtime Test.
 
 ### Next Runtime Test
-- None while development is paused.
-- If development resumes, run a regression pass covering startup errors, timeline draw order, fonts/menu isolation, branding/appearance scope, horizontal and vertical layouts, opacity, filters, minimap/locking and cooldown animation before the next stable release.
+- None scheduled in maintenance mode.
+- Documentation-only maintenance does not require a runtime retest.
+- If runtime code changes later, test the changed behaviour and the relevant regression surface before promotion; do not perform a blanket retest merely because development resumed.
 
 ## Planned / Next Work
-- None. Development is paused.
+- Maintenance mode only: respond to concrete bugs, compatibility issues or deliberately approved future work as they arise.
 
 ## Deferred / Out of Scope
 - Further UI redesign or feature additions.
 - Spells/Items options-panel re-layout unless deliberately promoted from idea to active scope.
-- Additional non-English runtime verification until development/testing resumes.
+- Exhaustive non-English runtime verification unless a future change or concrete issue makes it relevant.
 - Debug tooling unless a concrete need appears.
 
 ## Release / Promotion Notes
 - Main-only or release-only content to preserve: there are currently no extra main-only files. Stable `main` intentionally contains only `Cooline.lua`, stable `Cooline.toc`, `README.md`, `artwork/` and `locales/`; preserve stable TOC Title/Version metadata and do not copy development docs to `main`.
-- Known validation debt accepted for release: the items listed under Implemented / Awaiting Runtime Test were not individually/exhaustively exercised in every path or locale before/after the accepted 2.0.0 release.
+- Known validation debt accepted for release: timeline-overlay, font-preview, locale-filter migration, non-English cooldown-failure matching, opacity clamping and supported-locale behaviour were not each individually/exhaustively exercised in every path or locale before/after the accepted 2.0.0 release. This is historical release provenance, not scheduled maintenance work.
 - External/runtime prerequisites: WoW 1.12.1. No DLL/client extension is required for normal Cooline operation.
 
 ## Exact Next Step
-None while Cooline 2.0.0 remains the finished scope. If development resumes, read `dev_rulebook.md` and this file, verify the actual remote `dev` head, choose the next development version, define the new scope, and only then change runtime code.
+Remain in maintenance mode. No action is required until a concrete bug, compatibility issue or approved feature gives Cooline a new scope. At that point, read `dev_rulebook.md` and this file, verify the actual remote `dev` head, choose the next development version, define the scope and required targeted testing, and only then change runtime code.
