@@ -7,7 +7,7 @@
 - Runtime implementation commit: `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727` (`Optimize native cooldown reconciliation and rendering`). The product tree at `81331997c059320395838598d68adf5724ee2383` is runtime-identical to this commit; intervening commits only added/fixed/removed temporary CI for the Lua 5.0.2 compiler pass.
 - Stable baseline: `2.0.0` at `cdd502226b3e44b27d14fa2c855f0b93ae207c09` on `main`.
 - Goal: complete a native WoW 1.12.1 performance-focused `2.1.0` release first, preserve that native line, then develop `3.0.0` with ClassicAPI as a required runtime dependency.
-- Current scope boundary: Stage 1 only. The first native 2.1 performance delta is implemented and statically/compiler checked but has not received user runtime/performance validation. Do not begin ClassicAPI-required 3.0 work.
+- Current scope boundary: Stage 1 only. The first native 2.1 performance delta has passed targeted user functional runtime testing in WoW 1.12.1; quantitative CPU/performance improvement remains unmeasured because the runtime environment has too many confounding variables. Do not begin ClassicAPI-required 3.0 work.
 
 ## Current Design / Development Contract
 
@@ -77,6 +77,7 @@ ClassicAPI currently provides capabilities that can remove much of Cooline's nat
 Before the 3.0 item path is designed, audit every relevant item-use route under ClassicAPI: bag clicks, equipped on-use items/trinkets, action buttons, `/use` macros, conditional macros and any supported client-specific route. Do not delete fallback discovery until exact item identity/cooldown behaviour is demonstrated for the intended routes.
 
 ## Recent Relevant Commits
+- `ccee0d3ecb5a4e401248e001c46a80f7045d3796` — Update Cooline 2.1 performance handoff; starting head for the first user runtime checkpoint.
 - `81331997c059320395838598d68adf5724ee2383` — Remove temporary Lua 5.0.2 CI check; product tree remains identical to the runtime implementation commit.
 - `8755b19a403a5708b381ca4cff528c1d8426e04a` — Fix isolated Lua 5.0.2 compiler check; successful GitHub Actions run verified and compiled the current addon with the official Lua 5.0.2 compiler.
 - `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727` — Optimize native cooldown reconciliation and rendering.
@@ -92,9 +93,9 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - Client Default bar-font inheritance was user-confirmed.
 - The user accepted the migrated addon state and Qiraji-blue Cooline branding as good.
 - Stable release `2.0.0` was accepted as the finished functional baseline.
-- No `2.1.0-dev` runtime behaviour has been user-verified yet.
+- First `2.1.0-dev` checkpoint user-verified on the runtime-identical product tree from `81331997c059320395838598d68adf5724ee2383` / implementation commit `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727`: ordinary spell cooldowns, potion/consumable cooldown, rapid/spam-click casting, equipped on-use trinket cooldown, `/reload` recovery of an active cooldown, trinket swapping with a 30-second cooldown discovered on equip, failed-cast pulse behaviour, and adding/removing filters all worked correctly.
 
-## Implemented / Awaiting Runtime Test
+## Implemented / Runtime-Tested Checkpoint
 - TOC was bumped from `2.0.0-dev` to `2.1.0-dev` in its own commit before any runtime edit.
 - Removed the permanent 0.50-second full `ReconcileAllCooldowns()` poll; there is no longer an idle periodic spellbook+bag+equipment reconciliation.
 - Split reconciliation into spell-only and item-only paths. Spell events/filter changes no longer trigger item scans, and bag/inventory events/filter changes no longer trigger spellbook scans.
@@ -104,7 +105,7 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - Directly captured bag/equipped item uses start a short item-only retry window so removing the old permanent poll does not remove recovery for cooldown state that becomes visible shortly after the use call.
 - Removed redundant per-frame `Show`, alpha, frame-level and size writes where state has not changed; alpha updates are now transition/settings driven while timeline position still updates as active cooldowns move.
 - Existing SavedVariables names/data shape, options UI, filters, native item identity semantics, cooldown pulse behaviour and WoW 1.12.1 target remain unchanged by design.
-- Remaining Stage 1 optimization candidates after this checkpoint include safe burst-event coalescing, stable spell/filter caching, reconciliation-allocation cleanup, and the optional filter-row flash `OnUpdate` cleanup. These are not implemented yet and should not be mixed into the first runtime validation delta.
+- Remaining Stage 1 optimization candidates after this checkpoint include safe burst-event coalescing, stable spell/filter caching, reconciliation-allocation cleanup, and the optional filter-row flash `OnUpdate` cleanup. These are not implemented yet. Any selected follow-up must be treated as a new untested delta and receive fresh static/compiler and targeted runtime validation.
 - Some 2.0.0 behaviour was not individually/exhaustively exercised in every path or locale before release; that historical validation debt remains release provenance rather than a standing test obligation.
 
 ## Static / Automated Checks
@@ -119,26 +120,26 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - The complete product-tree delta from the previous handoff `2cb5543791ce65b039dad6005db12e6f46be6f93` is limited to `Cooline.lua` plus the intended `Cooline.toc` development-version bump.
 
 ## Current Issues
-- The first `2.1.0-dev` performance delta is implemented and compiler-checked but not yet runtime-tested in WoW 1.12.1.
-- Removing the permanent recovery poll deliberately increases reliance on Vanilla cooldown/inventory events plus the new bounded direct-item-use recovery window; targeted runtime testing must prove the documented recovery cases before more optimization or promotion.
+- The first `2.1.0-dev` performance delta has passed the targeted functional runtime paths exercised so far; no runtime regression was reported in those paths.
+- Quantitative CPU/performance improvement is not proven by user measurement because too many environmental variables make an informal before/after comparison unreliable. The architectural reductions remain statically established: no permanent 0.50-second full reconciliation, no permanent idle renderer, active-only rendering, and domain-split reconciliation.
+- Zoning/world-entry recovery, an explicit cooldown-reset case, spellbook-change recovery, and exhaustive shared-item cooldown identity were not exercised in this runtime pass. These remain untested coverage, not known failures.
 - WoW 1.12.1 provides limited information for identifying some shared item cooldowns, so affected item identification remains best-effort on the native line.
 - Non-English behaviour has not been exhaustively runtime-tested across every supported locale.
-- No known active correctness regression exists in the stable `2.0.0` baseline.
+- No known active correctness regression exists in the stable `2.0.0` baseline or in the exercised `2.1.0-dev` checkpoint paths.
 
 ## Testing
 
 ### Last Runtime Test
-- Version/commit: Stable `2.0.0` at `cdd502226b3e44b27d14fa2c855f0b93ae207c09`.
-- Passed: Overall addon state accepted as finished for the 2.0 functional scope; Client Default font inheritance; intended Qiraji-blue Cooline-name branding scope.
-- Failed: No currently documented active failure.
-- Not tested: Exhaustive per-locale coverage and individual exhaustive runtime validation of every historical 2.0 path.
+- Version/commit: `2.1.0-dev` on the runtime-identical product tree at `81331997c059320395838598d68adf5724ee2383`, implementation commit `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727`; the test was conducted from handoff/status head `ccee0d3ecb5a4e401248e001c46a80f7045d3796`.
+- Passed: ordinary spell cooldowns; potion/consumable cooldown; rapid/spam-click behaviour; equipped on-use trinket cooldown; `/reload` preserved/reconstructed an active cooldown; trinket swapping correctly discovered a 30-second cooldown on equip; failed-cast pulse; adding/removing filters updated the timeline correctly.
+- Failed: No failure reported in the exercised paths.
+- Performance result: no reliable quantitative before/after judgment; environmental variability is too high. Do not claim a measured CPU improvement from this test.
+- Not tested in this pass: zoning/world-entry recovery, an explicit cooldown-reset case, spellbook-change recovery, exhaustive shared-item cooldown identity, exhaustive per-locale coverage.
 
 ### Next Runtime Test
-- Test the current `2.1.0-dev` checkpoint on `dev`; this is the first runtime test of the new performance architecture.
-- Functional coverage: startup/reload, spell cooldown start/update/expiry, cooldown reset where available, potion/consumable cooldowns, equipped on-use items/trinkets, shared item cooldown identity, rapid repeated casts, failed-cast pulse animation, zoning/world entry, spellbook changes, equipment/inventory changes, and spell/item filter changes.
-- Recovery coverage: confirm cooldowns still appear/update correctly after the event paths that replaced the old permanent poll, especially direct bag/equipped-item use where cooldown information may become visible shortly after the use call.
-- Performance coverage: confirm idle state has no permanent renderer and no periodic full spell+bag+equipment scan; spell-only activity must not scan items and item/inventory-only activity must not scan the spellbook.
-- If this checkpoint passes, record the exact tested commit before proceeding with any remaining Stage 1 optimization. Any later optimization delta becomes untested again until exercised.
+- No additional test is required before evaluating the remaining Stage 1 optimization candidates; the first checkpoint has a clear functional pass result.
+- Any newly selected Stage 1 optimization becomes a fresh untested delta and must receive its own targeted runtime validation after static review and a real Lua 5.0.2 compiler check.
+- When convenient, zoning/world-entry recovery and a true cooldown-reset case remain useful opportunistic coverage for the already-passed checkpoint, but they are not documented as failures or blockers.
 - 3.0 requires a separate future runtime pass after its ClassicAPI-driven architecture is implemented; successful 2.1 testing does not authorize or validate 3.0.
 
 ## Planned / Next Work
@@ -150,8 +151,8 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 4. **Implemented for the first checkpoint:** keep deliberate startup/world-entry full-sync points and add bounded item-only recovery after directly captured bag/equipped item use.
 5. **Implemented for the first checkpoint:** convert rendering to active-only lifecycle management, disable the renderer when idle, iterate only active cooldowns, and avoid redundant `Show`, alpha, size and frame-level writes.
 6. **Checked:** complete static review and real Lua 5.0.2 compiler pass.
-7. **Next:** run the targeted user runtime/performance test documented above before expanding the delta.
-8. After that checkpoint passes, evaluate the remaining performance work individually: safe burst-event coalescing, stable spellbook/filter lookup caching, avoidable reconciliation garbage, and the optional options-row flash `OnUpdate` cleanup. Only implement changes whose correctness benefit/risk is clear.
+7. **Passed:** targeted user runtime testing confirmed the exercised spell, potion, rapid-input, on-use trinket, reload recovery, equipment-change, failed-cast pulse and filter-update paths. Quantitative performance improvement was not measurable reliably in the user's environment.
+8. **Next:** evaluate the remaining performance work individually: safe burst-event coalescing, stable spellbook/filter lookup caching, avoidable reconciliation garbage, and the optional options-row flash `OnUpdate` cleanup. Select only a change whose expected benefit is concrete and whose correctness risk is low; do not combine unrelated candidates into one validation delta.
 9. Re-run static/Lua 5.0.2 checks and targeted runtime validation for any additional Stage 1 delta.
 10. Promote the accepted 2.1 build to `main` as stable `2.1.0`; do not start the 3.0 runtime rewrite before 2.1 is an accepted stable checkpoint.
 
@@ -191,6 +192,6 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - The exact stable 2.1 commit must be tagged/preserved before 3.0 replaces it on `main`.
 
 ## Exact Next Step
-Runtime/performance-test the current native `2.1.0-dev` checkpoint on `dev`, using the coverage under **Next Runtime Test**. The checked product-code tree before this status commit is `81331997c059320395838598d68adf5724ee2383` and is runtime-identical to implementation commit `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727`. Do not begin further Stage 1 optimization until this first delta has a clear runtime result, and do not begin the ClassicAPI-required 3.0 rewrite until native 2.1 has completed Stage 1, passed user testing, and been promoted/preserved as the stable native checkpoint.
+Evaluate the remaining native Stage 1 performance candidates against the now user-passed first `2.1.0-dev` checkpoint: safe burst-event coalescing, stable spellbook/filter lookup caching, avoidable reconciliation garbage, and optional options-row flash `OnUpdate` cleanup. Choose the smallest clearly beneficial, low-risk next delta; do not combine unrelated optimizations. After implementation, repeat static review, the real Lua 5.0.2 compiler check and targeted user runtime validation. Do not begin the ClassicAPI-required 3.0 rewrite until native 2.1 has completed Stage 1, passed user testing for the final delta, and been promoted/preserved as the stable native checkpoint.
 
 
