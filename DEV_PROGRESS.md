@@ -110,7 +110,7 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - First `2.1.0-dev` checkpoint user-verified on the runtime-identical product tree from `81331997c059320395838598d68adf5724ee2383` / implementation commit `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727`: ordinary spell cooldowns, potion/consumable cooldown, rapid/spam-click casting, equipped on-use trinket cooldown, `/reload` recovery of an active cooldown, trinket swapping with a 30-second cooldown discovered on equip, failed-cast pulse behaviour, adding/removing filters all worked correctly, and an active cooldown survived an instance zoning/loading-screen transition.
 
 ## Implemented / Current Stage 1 State
-- TOC was originally bumped from `2.0.0-dev` to `2.1.0-dev` before the first 2.1 runtime work. After the canonical versioning rule was revised, the current metadata was advanced to `2.1.1-dev` to represent the already-landed burst-coalescing product revision. Future addon-affecting revisions must increment again before/as they land.
+- TOC was originally bumped from `2.0.0-dev` to `2.1.0-dev` before the first 2.1 runtime work. After the canonical versioning rule was revised, burst coalescing was represented as `2.1.1-dev`; the combined final native Stage 1 runtime delta was then correctly bumped to `2.1.2-dev` before the code edit.
 - Removed the permanent 0.50-second full `ReconcileAllCooldowns()` poll; there is no longer an idle periodic spellbook+bag+equipment reconciliation.
 - Split reconciliation into spell-only and item-only paths. Spell events/filter changes no longer trigger item scans, and bag/inventory events/filter changes no longer trigger spellbook scans.
 - Full reconciliation is retained deliberately for startup and `PLAYER_ENTERING_WORLD` recovery.
