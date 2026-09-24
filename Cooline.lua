@@ -112,9 +112,31 @@ local pendingItemReconcile = false
 local RefreshRuntimeDriver
 local RebuildSpellbookCache
 
+local function MakeCooldownSignature(startTime, duration)
+	if not startTime or not duration then
+		return nil
+	end
+
+	return tostring(floor(startTime * 10 + 0.5)) .. ":" ..
+	       tostring(floor(duration * 10 + 0.5))
+end
+
 local function CapturePendingItem(name, texture, itemID, itemGUID, ambiguous)
+	local now
+	local preStart, preDuration, preEnabled
+	local preCooldownSignature
+
 	if (not name or name == "") and not itemID and not ambiguous then
 		return
+	end
+
+	now = GetTime()
+	if itemID then
+		preStart, preDuration, preEnabled = GetItemCooldown(itemID)
+		if preEnabled == 1 and preDuration and preDuration > 2.5 and preStart and
+		   (preStart + preDuration) > now then
+			preCooldownSignature = MakeCooldownSignature(preStart, preDuration)
+		end
 	end
 
 	pendingItemUse = {
@@ -123,7 +145,8 @@ local function CapturePendingItem(name, texture, itemID, itemGUID, ambiguous)
 		itemID = itemID,
 		itemGUID = itemGUID,
 		ambiguous = ambiguous and true or nil,
-		time = GetTime(),
+		preCooldownSignature = preCooldownSignature,
+		time = now,
 	}
 
 	bar.itemRetryAt = pendingItemUse.time
@@ -1238,6 +1261,7 @@ local function TryExactPendingItemCooldown()
 	local signature
 	local key
 	local cd
+	local unchangedActive = false
 
 	if not intent or not intent.itemID then
 		return false
@@ -1246,36 +1270,48 @@ local function TryExactPendingItemCooldown()
 	startTime, duration, enabled = GetItemCooldown(intent.itemID)
 	if enabled == 1 and duration and duration > 2.5 and startTime and
 	   (startTime + duration) > now then
-		name = intent.name or C_Item.GetItemNameByID(intent.itemID)
-		texture = intent.texture or C_Item.GetItemIconByID(intent.itemID)
+		signature = MakeCooldownSignature(startTime, duration)
+		unchangedActive = intent.preCooldownSignature and
+		                  signature == intent.preCooldownSignature
 
-		if name then
-			signature = tostring(floor(startTime * 10 + 0.5)) .. ":" ..
-			            tostring(floor(duration * 10 + 0.5))
-			itemCooldownLocks[signature] = name
+		if not unchangedActive then
+			name = intent.name or C_Item.GetItemNameByID(intent.itemID)
+			texture = intent.texture or C_Item.GetItemIconByID(intent.itemID)
 
-			if ItemAllowed(name) then
-				key = "item:" .. name
-				cd = EnsureCooldown(key)
-				cd.itemID = intent.itemID
-				cd.itemGUID = intent.itemGUID
-				cd.startTime = startTime
-				cd.duration = duration
-				cd.endTime = startTime + duration
-				cd.icon:SetTexture(texture)
-				cd:SetBackdropColor(0, 0, 0, 1)
-				ActivateCooldown(key, cd)
+			if name then
+				itemCooldownLocks[signature] = name
+
+				if ItemAllowed(name) then
+					key = "item:" .. name
+					cd = EnsureCooldown(key)
+					cd.itemID = intent.itemID
+					cd.itemGUID = intent.itemGUID
+					cd.startTime = startTime
+					cd.duration = duration
+					cd.endTime = startTime + duration
+					cd.icon:SetTexture(texture)
+					cd:SetBackdropColor(0, 0, 0, 1)
+					ActivateCooldown(key, cd)
+				end
+
+				pendingItemUse = nil
+				bar.itemRetryAt = nil
+				return true
 			end
-
-			pendingItemUse = nil
-			bar.itemRetryAt = nil
-			return true
 		end
 	end
 
 	if (now - intent.time) > ITEM_INTENT_WINDOW then
 		pendingItemUse = nil
 		bar.itemRetryAt = nil
+
+		-- If the exact item API never exposed a new cooldown, preserve one
+		-- legacy discovery pass as a transitional safety net. Do not rescan
+		-- when the item was already on the same cooldown before the attempt.
+		if not unchangedActive then
+			pendingItemReconcile = true
+			RefreshRuntimeDriver()
+		end
 		return true
 	end
 
@@ -1290,8 +1326,7 @@ local function AddItemCandidate(candidateCount, itemName, itemTexture, startValu
 		return candidateCount
 	end
 
-	signature = tostring(floor((startValue or 0) * 10 + 0.5)) .. ":" ..
-	            tostring(floor((durationValue or 0) * 10 + 0.5))
+	signature = MakeCooldownSignature(startValue or 0, durationValue or 0)
 
 	candidateCount = candidateCount + 1
 	candidate = itemCandidates[candidateCount]
