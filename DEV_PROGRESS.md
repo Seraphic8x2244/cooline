@@ -2,14 +2,14 @@
 
 ## Current
 - Branch: `dev`.
-- Version: `3.0.3-dev` in `Cooline.toc`.
-- Current dev branch head before this status commit: `dc340c628954fe93509fdb57696f37caf0294678` (`Guard Cooline exact item cooldown transitions`). The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
+- Version: `3.0.4-dev` in `Cooline.toc`.
+- Current dev branch head before this status commit: `630705170670209c4476ecd68296a4e6e9a57241` (`Remove temporary Lua 5.0.2 check`). Runtime implementation commit: `b328f7b45261767fb913441e156663beed2fcfe7` (`Retry exact spell cooldown observation`). The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
 - Stable release: `2.1.2` on `main` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505` (`Release Cooline 2.1.2`). Its `Cooline.lua` blob exactly matches the user-tested final native runtime.
 - Permanent native preservation branch: `native-2.1` at the exact same stable commit `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`.
 - The planned lightweight tag `v2.1.2` is not yet created because the available GitHub connector exposes branch/ref movement but not tag creation. Do not misstate it as existing.
 - ClassicAPI audit source: `Seraphic8x2244/ClassicAPI` `master` at `7ab32df2aadc2171100aac859154085fcaed56b2`.
 - Goal: develop `3.0.x` as a ClassicAPI-required architectural rewrite while preserving the tested renderer/UI/SavedVariables behaviour from stable native `2.1.2`.
-- Current scope boundary: 2.1 is finished/released/preserved. 3.0 Stage 3 now has its first ClassicAPI-required runtime implementation through `3.0.3-dev`: exact successful-cast spellID tracking and exact item-use observation are implemented for every route proven by the audit. Native item discovery is deliberately retained only as transitional recovery / ambiguity coverage, especially for action-bar bag-instance entries whose itemID ClassicAPI still does not expose. The 3.0 runtime delta is not yet user-tested.
+- Current scope boundary: 2.1 is finished/released/preserved. 3.0 Stage 3 is at `3.0.4-dev`. Exact item-use observation remains implemented for the proven routes. The first spell runtime attempt exposed a timing defect: `UNIT_SPELLCAST_SUCCEEDED` can arrive before the direct ClassicAPI cooldown query reflects the newly started cooldown. `3.0.4-dev` now retains the exact successful spellID through a bounded retry and one recovery reconciliation instead of dropping it. The user is unsure whether earlier 3.0 tests were run from the intended branch, so **all pre-3.0.4 3.0 runtime observations are branch-unverified and do not count as validation**. Native item discovery remains deliberately retained only as transitional recovery / ambiguity coverage, especially for action-bar bag-instance entries whose itemID ClassicAPI still does not expose.
 
 ## Current Design / Development Contract
 
@@ -45,7 +45,7 @@
 - Stable `main` is now `2.1.2` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`; the exact same commit is preserved on `native-2.1`.
 - `dev` is now the ClassicAPI-required `3.0.x` line. It is not a dual-path compatibility build.
 - ClassicAPI is a hard prerequisite for 3.0. Detect it via `CLASSIC_API_VERSION` and document the dependency explicitly; do not keep broad native scanning merely to support clients without the DLL.
-- Every addon-affecting 3.0 development revision must bump the patch version under the rulebook. The first runtime delta correctly bumped to `3.0.1-dev`; two correctness revisions then bumped to `3.0.2-dev` and `3.0.3-dev`. Continue bumping the patch for every later addon-affecting revision.
+- Every addon-affecting 3.0 development revision must bump the patch version under the rulebook. Runtime revisions have progressed through `3.0.1-dev`, `3.0.2-dev`, `3.0.3-dev`, and the spell-observation timing fix at `3.0.4-dev`. Continue bumping the patch for every later addon-affecting revision.
 - Preserve existing SavedVariables compatibility, filter behaviour, renderer/lifecycle improvements, visual layout, failed-cast pulse intent and user-facing options unless a ClassicAPI-driven architectural change explicitly requires otherwise.
 - Do not delete the native item-discovery path until the exact use-route matrix is resolved for bag clicks, equipped items, action buttons, item bindings, ordinary macros and supported conditional/custom macro routes.
 - A Spells/Items options-panel re-layout remains only an optional future idea and is outside both current performance stages unless separately approved.
@@ -110,6 +110,9 @@ Smallest complete strategy with the current APIs:
 5. Capture use identity before execution wherever consuming/moving the item can destroy the evidence. Post-hooks are acceptable only where the exact identity is guaranteed to survive the call; the current implementation therefore uses pre-call wrappers for location-backed use, `C_Item.UseItemByName`, and `UseAction`.
 
 ## Recent Relevant Commits
+- `630705170670209c4476ecd68296a4e6e9a57241` — Remove the temporary Lua 5.0.2 workflow after the `3.0.4-dev` compiler pass; product files are unchanged from the checked runtime implementation.
+- `b0083d74b6ff0e9762c2ae80dbd9e3acd5334cd7` — Add the temporary Lua 5.0.2 compiler workflow used to check the `3.0.4-dev` product tree.
+- `b328f7b45261767fb913441e156663beed2fcfe7` — Fix exact spell cooldown observation timing: retain successful spellID/name through a bounded direct-query retry and one recovery reconciliation; bump to `3.0.4-dev`.
 - `dc340c628954fe93509fdb57696f37caf0294678` — Guard exact item observation against unchanged pre-existing/shared cooldowns; preserve one legacy recovery scan only when an exact route fails to surface a new cooldown; bump to `3.0.3-dev`.
 - `0063fada832d47eae5e103ce3e43c1b65e79ccf2` — Harden exact use capture: pre-capture `C_Item.UseItemByName` / `UseAction` before consumables can disappear and restrict successful spell events to strict player spellbook entries; bump to `3.0.2-dev`.
 - `fc949e6791b5ac1e23f6b7d77ac39e0db922b129` — Implement the first Cooline 3.0 exact cooldown observation runtime: hard ClassicAPI dependency, exact spellID path, exact location/itemID/GUID item observation, narrow ClassicAPI events and retained ambiguous native fallback; bump to `3.0.1-dev`.
@@ -175,7 +178,9 @@ Smallest complete strategy with the current APIs:
 - 3.0 implementation static review verified that bag/equipped uses capture itemID+GUID before execution; `C_Item.UseItemByName` and `UseAction` are pre-captured; item-by-ID actions take the exact path; bag-instance actions explicitly retain native discovery; exact item cooldowns require a post-use cooldown-signature transition; and an unchanged pre-existing shared cooldown is not re-attributed.
 - 3.0 spell static review verified successful player casts use the exact ClassicAPI spellID and direct cooldown query, while `IsSpellKnown(spellID)` preserves the old spellbook-only behaviour and avoids treating arbitrary item/proc spell events as ordinary Cooline spell entries.
 - The current `Cooline.lua` has approximately 148 top-level local declarations by static count, below Lua 5.0's 200-local compiler ceiling. This is a guardrail only, not a compiler pass.
-- The canonical VanillaTemplate Lua 5.0.2 checker could not be run for the current 3.0 delta because the checker source cannot be retrieved into this execution environment (the host C compiler is available, but GitHub network resolution from the execution container fails). Per the rulebook, **do not claim a Lua 5.0.2 compiler pass for `3.0.3-dev` yet**.
+- The earlier `3.0.3-dev` handoff lacked a real compiler pass because the checker could not be retrieved into the direct execution environment. For `3.0.4-dev`, the repo's previously proven temporary GitHub Actions workflow was restored instead.
+- GitHub Actions run `36045308278` successfully downloaded the official Lua 5.0.2 source archive, verified SHA-256 `a6c85d85f912e1c321723084389d63dee7660b81b8292452b190ea7190dd73bc`, built Lua 5.0.2, and ran `luac -p` successfully against `Cooline.lua` and all locale Lua files for the exact `3.0.4-dev` product tree.
+- The temporary compiler workflow was removed immediately after the pass. Cleanup commit `630705170670209c4476ecd68296a4e6e9a57241` changes only the workflow file, so the product files remain identical to checked runtime commit `b328f7b45261767fb913441e156663beed2fcfe7`.
 - Diff/static review confirmed the old `SCAN_INTERVAL` / `scanElapsed` permanent polling path is absent.
 - Static review confirmed full reconciliation remains limited to startup and world-entry recovery; spell and item events route to their own domains.
 - Static review confirmed `Render()` iterates `activeCooldowns`, not the persistent historical `cooldowns` registry.
@@ -193,7 +198,9 @@ Smallest complete strategy with the current APIs:
 - The temporary compiler workflow was removed after that pass. Comparing runtime commit `367fe609596950a34ae8d286388c18679fac7507` to cleanup tree `686aecb040545252492c9da59981beb902a6e3d4` shows no product-file differences.
 
 ## Current Issues
-- The ClassicAPI-required `3.0.3-dev` runtime implementation is **implemented and statically reviewed but not yet user runtime-tested**.
+- The user reports that a recent test showed item cooldowns appearing but spell cooldowns, specifically Blessing of Protection, did not appear. The user is also unsure whether earlier 3.0 tests were run from the intended branch. Treat all pre-`3.0.4-dev` 3.0 gameplay observations as branch-unverified and invalid for validation.
+- Root cause identified in the `3.0.3-dev` spell path: Cooline queried `C_Spell.GetSpellCooldown(spellID)` immediately inside `UNIT_SPELLCAST_SUCCEEDED`. ClassicAPI fires that event directly from its spell-success/SPELL_GO path, which can precede the client cooldown state becoming visible. If the immediate query returned no active cooldown, Cooline discarded the successful spellID; later `SPELL_UPDATE_COOLDOWN` refreshed only already-active spell entries, so the cooldown could be lost completely.
+- `3.0.4-dev` fixes that timing hole by retaining the exact successful spellID/name for up to one second, retrying the direct query on the runtime driver and `SPELL_UPDATE_COOLDOWN`, and using one existing spellbook reconciliation only as a timeout recovery backstop. This fix is compiler-checked but **not yet user runtime-tested**.
 - Current ClassicAPI still cannot expose exact itemID/GUID for a `UseAction` bag-instance action: `GetActionInfo(slot)` returns `"item", nil`. Cooline therefore intentionally retains the native item-discovery fallback for that route and for one timeout recovery pass if an otherwise exact itemID route fails to surface a new cooldown.
 - The current execution environment could not retrieve/run the canonical VanillaTemplate Lua 5.0.2 checker, so the 3.0 delta has no real compiler pass yet. This is a tooling limitation, not a known Lua error.
 - The first `2.1.0-dev` performance delta has passed the targeted functional runtime paths exercised so far; no runtime regression was reported in those paths.
@@ -228,14 +235,13 @@ Smallest complete strategy with the current APIs:
 - Quantitative CPU/performance improvement remains unmeasured; do not convert the functional pass into a numerical performance claim.
 
 ### Next Runtime Test — ClassicAPI Stage 3
-- Version/runtime: `3.0.3-dev`, implementation head before this status commit `dc340c628954fe93509fdb57696f37caf0294678`.
-- Confirm the addon loads with current ClassicAPI, `/cooline` still opens the options UI, SavedVariables/options/appearance remain intact, and no Lua error occurs at login/reload.
-- Spell path: cast an ordinary known spell with a cooldown >2.5 seconds; verify the correct icon/timing appears, repeated casts/failure-pulse behaviour remains sane, and `/reload` / zoning reconstructs active cooldowns.
-- Exact bag/equipment item paths: use a bag consumable and an equipped on-use item/trinket; verify the correct item appears and no unrelated shared-cooldown item is substituted.
-- Macro/binding path: exercise ordinary and supported conditional `/use` through the installed SCRM/pfUI path plus any direct ClassicAPI item binding in normal use; these should reach the exact `UseInventoryItem` / `C_Item.UseItemByName` observers.
-- Action-bar path: test an item-by-ID action if available and a dragged bag-instance action. The bag-instance route is expected to use the retained native fallback because ClassicAPI currently reports no itemID; it must still show the correct practical result and must not regress action execution.
-- Shared-cooldown safety: while an item is already locked by a shared cooldown, attempt another item in that category and verify Cooline does not relabel the existing cooldown merely because of the failed/blocked use attempt.
-- No 3.0 runtime result is recorded until the user performs this test.
+- Version/runtime: **`3.0.4-dev`**, runtime implementation `b328f7b45261767fb913441e156663beed2fcfe7`, product-identical checked cleanup head before this status commit `630705170670209c4476ecd68296a4e6e9a57241`.
+- **Branch/build verification is mandatory before interpreting results:** after login/reload, the chat load message must say `Cooline 3.0.4-dev loaded.` (and the AddOns/TOC version should likewise be `3.0.4-dev`). If it does not, stop and fix the installed branch/build before testing.
+- First targeted regression test: cast Blessing of Protection and verify its cooldown appears with the correct icon/timing. Repeat with one other ordinary known spell with a cooldown >2.5 seconds.
+- Then verify spell failure-pulse behaviour plus `/reload` / zoning reconstruction of an active spell cooldown.
+- Reconfirm the already-observed item path on the confirmed `3.0.4-dev` build: one bag consumable and one equipped on-use item/trinket.
+- After those pass, continue the broader macro/binding/action/shared-cooldown matrix from the previous handoff.
+- No pre-`3.0.4-dev` 3.0 runtime observation should be promoted to a pass unless its exact branch/build can independently be confirmed.
 
 ## Planned / Next Work
 
@@ -268,9 +274,10 @@ Smallest complete strategy with the current APIs:
 7. **Implemented:** direct `ITEM` bindings and the supported SCRM/pfUI ordinary/conditional `/use` routes are covered through their concrete `C_Item.UseItemByName` / `UseInventoryItem` calls rather than macro-text parsing.
 8. **Implemented:** item-by-ID action entries use exact identity. Bag-instance action entries still return `"item", nil`; for those, and for one exact-route timeout recovery pass, the legacy native item-discovery scan remains intentionally available.
 9. **Implemented:** broad native `BAG_UPDATE` / `UNIT_INVENTORY_CHANGED` registrations were replaced on the 3.0 line with ClassicAPI `BAG_UPDATE_DELAYED` / `PLAYER_EQUIPMENT_CHANGED` while preserving startup/world-entry recovery.
-10. **Current gate:** run the consolidated `3.0.3-dev` ClassicAPI runtime matrix above. A real Lua 5.0.2 compiler pass is still outstanding because the checker could not be retrieved in this execution environment.
-11. **After the runtime gate:** if the implemented exact routes pass, address the remaining action-bar bag-instance gap in ClassicAPI itself (expose exact itemID and preferably GUID/location for that action descriptor), then only remove the broad native item-discovery fallback after the new route is code- and runtime-proven.
-12. Keep `main` on stable `2.1.2` and `native-2.1` unchanged until the 3.0 line is explicitly accepted for promotion.
+10. **Spell timing correction implemented/checked:** `3.0.4-dev` retains the exact successful spellID through a bounded retry so a too-early success event cannot permanently lose the cooldown. GitHub Actions run `36045308278` passed the real Lua 5.0.2 compiler check.
+11. **Current gate:** runtime-test the confirmed `3.0.4-dev` build, starting with Blessing of Protection and another normal spell, then reconfirm items and continue the broader matrix. Earlier branch-unverified 3.0 tests do not count.
+12. **After the runtime gate:** if the implemented exact routes pass, address the remaining action-bar bag-instance gap in ClassicAPI itself (expose exact itemID and preferably GUID/location for that action descriptor), then only remove the broad native item-discovery fallback after the new route is code- and runtime-proven.
+13. Keep `main` on stable `2.1.2` and `native-2.1` unchanged until the 3.0 line is explicitly accepted for promotion.
 
 ## Deferred / Out of Scope
 - UI redesign or unrelated feature additions during the 2.1 performance pass.
@@ -289,6 +296,6 @@ Smallest complete strategy with the current APIs:
 - The exact stable native commit is already preserved on `native-2.1`. The matching `v2.1.2` tag remains pending because tag creation is unavailable through the current connector; do not claim the tag exists.
 
 ## Exact Next Step
-Runtime-test `3.0.3-dev` from this handoff with current ClassicAPI using the consolidated Stage 3 matrix above. Do not make another runtime change before interpreting that test unless a load-blocking defect is discovered. If the exact spell, bag/equipment, named/bound/macro, item-by-ID action and shared-cooldown-transition paths pass, the next development step is to extend ClassicAPI so bag-instance `UseAction` entries expose exact item identity, then bump Cooline for the corresponding runtime revision and remove native item discovery only after that final route is proven. The real VanillaTemplate Lua 5.0.2 compiler check also remains outstanding and must be run before claiming compiler-checked 3.0 status.
+Install/checkout the confirmed `dev` build and verify the client load message says **`Cooline 3.0.4-dev loaded.`** before evaluating any runtime result. First test Blessing of Protection and one other ordinary >2.5-second spell cooldown; this directly validates the `b328f7b45261767fb913441e156663beed2fcfe7` timing fix. Then reconfirm one bag consumable and one equipped on-use item on the same confirmed build before continuing the broader Stage 3 matrix. Do not count any earlier 3.0 gameplay observation as validation unless its exact branch/build can be confirmed. If the confirmed `3.0.4-dev` spell/item gate passes, continue to the remaining action-bar bag-instance ClassicAPI identity gap.
 
 
