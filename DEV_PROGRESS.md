@@ -9,7 +9,7 @@
 - Previously user-tested runtime implementation: `bcdd907fb9f52d8ce44cdbd2851a86469b0ba727` (`Optimize native cooldown reconciliation and rendering`), runtime-identical to checked tree `81331997c059320395838598d68adf5724ee2383`.
 - Stable baseline: `2.0.0` at `cdd502226b3e44b27d14fa2c855f0b93ae207c09` on `main`.
 - Goal: complete the native WoW 1.12.1 performance-focused `2.1.x` line first, release the final accepted `2.1.x` revision, preserve that native line, then develop `3.0.0` with ClassicAPI as a required runtime dependency.
-- Current scope boundary: Stage 1 only. At the user's request, the three remaining native optimizations were deliberately batched into one final `2.1.2-dev` delta to avoid repeated client restarts/microtests. Implementation/static/compiler work for Stage 1 is complete; this combined delta is not yet user runtime-tested. Quantitative CPU/performance improvement remains unmeasured because the runtime environment has too many confounding variables. ClassicAPI-required 3.0 remains blocked until this final native delta passes, is promoted, tagged and preserved.
+- Current scope boundary: native Stage 1 implementation and user runtime validation are complete. The combined final `2.1.2-dev` delta was user-tested successfully with no reported regression. Quantitative CPU/performance improvement remains unmeasured because the runtime environment has too many confounding variables. Next: promote the exact accepted native runtime to stable `2.1.2`, preserve it, then begin ClassicAPI-required `3.0.0-dev` work.
 
 ## Current Design / Development Contract
 
@@ -129,7 +129,7 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - Stable filter lookup caching is implemented: locale-scoped spell/item blacklist and whitelist arrays are mirrored into uppercase lookup sets, refreshed after filter mutations, so cooldown scans no longer linearly scan/uppercase the filter lists for each candidate.
 - Reconciliation allocation cleanup is implemented: spell/item `seen` maps, item candidate records, and active item-signature scratch state are reused across reconciliations; item candidate records form a persistent pool while shared-cooldown lock semantics remain unchanged.
 - Filter-row flash cleanup is implemented: the seven spell rows and seven item rows no longer carry permanent `OnUpdate` handlers. A row installs the shared flash driver only while its 0.55-second highlight is active and removes it when the flash ends.
-- Stage 1 implementation is now complete pending the consolidated `2.1.2-dev` runtime pass.
+- Stage 1 implementation and consolidated `2.1.2-dev` runtime validation are complete. The user reports the final build is working very well with no new regression.
 - Some 2.0.0 behaviour was not individually/exhaustively exercised in every path or locale before release; that historical validation debt remains release provenance rather than a standing test obligation.
 
 ## Static / Automated Checks
@@ -152,7 +152,7 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 ## Current Issues
 - The first `2.1.0-dev` performance delta has passed the targeted functional runtime paths exercised so far; no runtime regression was reported in those paths.
 - The burst-event coalescing delta at `a9c53e8648c6c6d753c7b7327aab746222f0e5ec` passed user runtime testing. A one-frame delay is intentional only for broad spell/item event bursts; direct recovery and world-entry paths remain immediate.
-- The final combined `2.1.2-dev` Stage 1 delta at `367fe609596950a34ae8d286388c18679fac7507` is implemented and checked but not yet user runtime-tested.
+- The final combined `2.1.2-dev` Stage 1 delta at `367fe609596950a34ae8d286388c18679fac7507` is implemented, checked and user runtime-tested successfully.
 - Quantitative CPU/performance improvement is not proven by user measurement because too many environmental variables make an informal before/after comparison unreliable. The architectural reductions remain statically established: no permanent 0.50-second full reconciliation, no permanent idle renderer, active-only rendering, and domain-split reconciliation.
 - Zoning/world-entry recovery was subsequently user-verified: an active cooldown survived an instance swap/loading-screen transition. An explicit cooldown-reset case, spellbook-change recovery, and exhaustive shared-item cooldown identity remain untested coverage, not known failures.
 - WoW 1.12.1 provides limited information for identifying some shared item cooldowns, so affected item identification remains best-effort on the native line.
@@ -175,13 +175,16 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - Failed: No new regression identified.
 - Performance result: no reliable quantitative before/after judgment; environmental variability remains too high.
 
+### Last Runtime Test — Final Native Stage 1
+- Version/runtime: `2.1.2-dev`, runtime implementation `367fe609596950a34ae8d286388c18679fac7507`, product-identical checked cleanup tree `686aecb040545252492c9da59981beb902a6e3d4`.
+- Result: user reports the combined final native build is working very well; no Lua errors, missing/stale cooldowns, wrong item identity, filter regressions, stuck highlight or other behavioural regression were reported.
+- This closes the native Stage 1 runtime-validation gate.
+- Quantitative CPU/performance improvement remains unmeasured; do not convert the functional pass into a numerical performance claim.
+
 ### Next Runtime Test
-- Perform one consolidated in-game regression pass on current `2.1.2-dev`; this is the final native Stage 1 validation gate.
-- In one session: verify a few ordinary spell cooldowns including rapid/spam input; use a potion/consumable; use and swap an on-use trinket; move inventory items; add/remove one spell filter and one item filter; confirm the filter-row highlight still animates and disappears normally.
-- Do one `/reload` or instance/loading-screen transition with an active cooldown to cover cache rebuild/world-entry recovery.
-- No quantitative CPU comparison is required; report any visible delay, missing/stale cooldown, wrong shared-item identity, filter mismatch, stuck highlight, Lua error or other behavioural regression.
-- If this consolidated pass succeeds, Stage 1 is complete. Promote this exact native runtime to stable `2.1.2`, tag `v2.1.2`, preserve it on `native-2.1`, then begin the documented ClassicAPI-required `3.0.0-dev` line.
-- Do not add further native optimization work unless this runtime pass exposes a concrete regression.
+- No further native 2.1 development runtime test is required before promotion.
+- After promotion, stable `2.1.2` may inherit the tested runtime behaviour because the intended release delta is only stable TOC metadata plus removal of dev-only files/docs from the release tree.
+- ClassicAPI-required `3.0.0-dev` will require its own new runtime validation after implementation.
 
 ## Planned / Next Work
 
@@ -194,9 +197,9 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 6. **Checked:** complete static review and real Lua 5.0.2 compiler pass.
 7. **Passed:** targeted user runtime testing confirmed the exercised spell, potion, rapid-input, on-use trinket, reload recovery, equipment-change, failed-cast pulse and filter-update paths. Quantitative performance improvement was not measurable reliably in the user's environment.
 8. **Implemented/checked/passed:** safe burst-event coalescing. Same-frame broad spell events now collapse to one spell reconciliation and same-frame broad item/inventory events to one item reconciliation; immediate recovery/world-entry/user-action paths are preserved. User testing found no new regression in the exercised spell/item/filter/equipment paths.
-9. **Implemented/checked, awaiting one consolidated runtime pass:** `2.1.2-dev` batches the final three native candidates by explicit user decision: stable spellbook/filter caching, reconciliation scratch/allocation reuse, and flash-only options-row `OnUpdate`.
-10. **Next:** run the single consolidated `2.1.2-dev` runtime pass above. Do not add more native optimization work unless it exposes a concrete regression.
-11. After a pass, promote the exact accepted native runtime to stable `2.1.2`, tag `v2.1.2`, preserve it on `native-2.1`, then move `dev` to `3.0.0-dev` for ClassicAPI-required development.
+9. **Implemented/checked/passed:** `2.1.2-dev` batches the final three native candidates by explicit user decision: stable spellbook/filter caching, reconciliation scratch/allocation reuse, and flash-only options-row `OnUpdate`. The consolidated user runtime pass reported no regression.
+10. **Next:** promote the exact accepted native runtime to stable `2.1.2`, tag `v2.1.2` where repository tooling permits, preserve it on `native-2.1`, then move `dev` to `3.0.0-dev` for ClassicAPI-required development.
+11. Do not add further native optimization work unless a concrete stable-line regression is discovered.
 
 ### Stage 2 — Preserve the final native line
 1. For the current final Stage 1 plan, tag the accepted native release as `v2.1.2`.
@@ -234,6 +237,6 @@ Before the 3.0 item path is designed, audit every relevant item-use route under 
 - The exact stable final `2.1.x` commit must be tagged with its matching version and preserved on `native-2.1` before 3.0 replaces it on `main`.
 
 ## Exact Next Step
-Runtime-test the combined final native Stage 1 `2.1.2-dev` delta using **Next Runtime Test** above. Runtime implementation commit: `367fe609596950a34ae8d286388c18679fac7507`; checked cleanup tree: `686aecb040545252492c9da59981beb902a6e3d4`, product-identical and Lua 5.0.2 compiler-passed. If the consolidated runtime pass succeeds, immediately prepare/publish stable `2.1.2`, tag `v2.1.2`, preserve the exact release on `native-2.1`, and only then begin `3.0.0-dev` ClassicAPI work.
+Promote the exact accepted native runtime from `2.1.2-dev` to stable `2.1.2` on `main`, preserving main's release-only file shape and changing only stable TOC title/version metadata beyond the tested runtime. Preserve that exact stable commit on `native-2.1` and tag `v2.1.2` where repository tooling permits. Then return to `dev`, bump to `3.0.0-dev`, record ClassicAPI as required, and begin the documented Stage 3 item-use/identity audit before deleting native discovery paths.
 
 
