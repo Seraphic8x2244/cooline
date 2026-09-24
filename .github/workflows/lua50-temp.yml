@@ -1,0 +1,23 @@
+name: Temporary Lua 5.0.2 check
+
+on:
+  push:
+    branches:
+      - dev
+
+permissions:
+  contents: read
+
+jobs:
+  lua50:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Seraphic8x2244/VanillaTemplate
+          ref: main
+          path: .lua50-template
+      - name: Run Lua 5.0.2 compiler check
+        run: bash .lua50-template/tools/lua50/check_lua50.sh Cooline.lua locales
