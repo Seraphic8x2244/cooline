@@ -97,6 +97,7 @@ local ApplyBarLockState
 local UpdateMinimapButton
 local optionsFrame
 local pendingItemUse
+local pendingSpellUse
 local itemCooldownLocks = {}
 local spellFilterSets = { blacklist = {}, whitelist = {} }
 local itemFilterSets = { blacklist = {}, whitelist = {} }
@@ -1230,6 +1231,50 @@ local function ApplyExactSpellCooldown(spellID, spellName)
 	return true
 end
 
+local function TryPendingExactSpellCooldown()
+	local intent = pendingSpellUse
+	local now = GetTime()
+
+	if not intent then
+		return false
+	end
+
+	if ApplyExactSpellCooldown(intent.spellID, intent.spellName) then
+		pendingSpellUse = nil
+		bar.spellRetryAt = nil
+		return true
+	end
+
+	if (now - intent.time) > 1.0 then
+		pendingSpellUse = nil
+		bar.spellRetryAt = nil
+		-- Exact success identity was preserved, but the cooldown never became
+		-- visible through the direct query. Keep one spellbook reconciliation
+		-- as a recovery backstop rather than losing the cooldown entirely.
+		pendingSpellReconcile = true
+		RefreshRuntimeDriver()
+		return true
+	end
+
+	return false
+end
+
+local function CapturePendingSpellCooldown(spellID, spellName)
+	if not spellID or not IsSpellKnown(spellID) then
+		return
+	end
+
+	pendingSpellUse = {
+		spellID = spellID,
+		spellName = spellName,
+		time = GetTime(),
+	}
+	bar.spellRetryAt = pendingSpellUse.time
+
+	TryPendingExactSpellCooldown()
+	RefreshRuntimeDriver()
+end
+
 local function RefreshActiveSpellCooldowns()
 	local key, cd
 	local info
@@ -1707,6 +1752,14 @@ local function RuntimeOnUpdate()
 	end
 
 	now = GetTime()
+	if bar.spellRetryAt and now >= bar.spellRetryAt then
+		bar.spellRetryAt = nil
+		TryPendingExactSpellCooldown()
+		if pendingSpellUse and (now - pendingSpellUse.time) <= 1.0 then
+			bar.spellRetryAt = now + 0.05
+		end
+	end
+
 	if bar.itemRetryAt and now >= bar.itemRetryAt then
 		bar.itemRetryAt = nil
 		if pendingItemUse and pendingItemUse.itemID then
@@ -1727,7 +1780,8 @@ end
 
 RefreshRuntimeDriver = function()
 	local hasActive = next(activeCooldowns) ~= nil
-	local needsDriver = hasActive or bar.itemRetryAt ~= nil or pendingSpellReconcile or pendingItemReconcile
+	local needsDriver = hasActive or bar.spellRetryAt ~= nil or bar.itemRetryAt ~= nil or
+	                    pendingSpellReconcile or pendingItemReconcile
 
 	if bar.activeVisual ~= hasActive then
 		UpdateBarAlpha(hasActive)
@@ -3400,10 +3454,12 @@ bar:SetScript("OnEvent", function()
 		end
 	elseif initialised and event == "UNIT_SPELLCAST_SUCCEEDED" then
 		if arg1 == "player" and arg3 then
-			ApplyExactSpellCooldown(arg3, arg4)
-			RefreshRuntimeDriver()
+			CapturePendingSpellCooldown(arg3, arg4)
 		end
 	elseif initialised and event == "SPELL_UPDATE_COOLDOWN" then
+		if pendingSpellUse then
+			TryPendingExactSpellCooldown()
+		end
 		RefreshActiveSpellCooldowns()
 	elseif initialised and event == "SPELLS_CHANGED" then
 		spellbookDirty = true
@@ -3416,6 +3472,8 @@ bar:SetScript("OnEvent", function()
 			QueueItemReconcile()
 		end
 	elseif initialised and event == "PLAYER_ENTERING_WORLD" then
+		pendingSpellUse = nil
+		bar.spellRetryAt = nil
 		pendingSpellReconcile = false
 		pendingItemReconcile = false
 		spellbookDirty = true
