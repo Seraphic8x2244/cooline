@@ -21,7 +21,7 @@ local function HasRequiredClassicAPI()
 	       type(GetItemCooldown) == "function" and
 	       type(GetActionInfo) == "function" and
 	       type(GetSpellInfo) == "function" and
-	       type(hooksecurefunc) == "function"
+	       type(IsSpellKnown) == "function"
 end
 
 if not HasRequiredClassicAPI() then
@@ -571,33 +571,43 @@ if OriginalUseInventoryItem then
 	end
 end
 
--- C_Item.UseItemByName bypasses UseContainerItem. Its argument survives the
--- call, so a secure post-hook is sufficient and also covers ClassicAPI ITEM
--- bindings plus supported conditional/custom /use implementations.
-hooksecurefunc(C_Item, "UseItemByName", function(itemInfo)
+-- C_Item.UseItemByName bypasses UseContainerItem. Capture before execution so
+-- the last copy of a consumable cannot disappear before Cooline records intent.
+-- ClassicAPI ITEM bindings and supported conditional/custom /use paths call this
+-- table function, so the wrapper covers them without parsing macro text.
+local OriginalUseItemByName = C_Item.UseItemByName
+C_Item.UseItemByName = function(itemInfo, unit)
 	local itemID = ResolveItemIDFromInfo(itemInfo)
+
 	if itemID then
 		CaptureItemID(itemID)
 	elseif type(itemInfo) == "string" then
 		CapturePendingItem(itemInfo)
 	end
-end)
 
--- Item-by-ID actions are exact. ClassicAPI currently exposes no itemID for
--- bag-instance action entries, so those deliberately retain the native scan
--- fallback until ClassicAPI exposes the action's exact item identity.
-hooksecurefunc("UseAction", function(slot)
-	local actionType, itemID = GetActionInfo(slot)
-	if actionType ~= "item" then
-		return
-	end
+	return OriginalUseItemByName(itemInfo, unit)
+end
 
-	if itemID then
-		CaptureItemID(itemID)
-	else
-		CapturePendingItem(nil, nil, nil, nil, true)
+-- Capture action identity before execution for the same reason: a consumed
+-- bag-instance action can disappear or change before a post-hook runs.
+local OriginalUseAction = UseAction
+if OriginalUseAction then
+	UseAction = function(slot, checkCursor, onSelf)
+		local actionType, itemID = GetActionInfo(slot)
+
+		if actionType == "item" then
+			if itemID then
+				CaptureItemID(itemID)
+			else
+				-- Current ClassicAPI exposes "item", nil for bag-instance
+				-- actions. Keep the native scan fallback for this exact gap.
+				CapturePendingItem(nil, nil, nil, nil, true)
+			end
+		end
+
+		return OriginalUseAction(slot, checkCursor, onSelf)
 	end
-end)
+end
 
 
 
@@ -1168,7 +1178,7 @@ local function ApplyExactSpellCooldown(spellID, spellName)
 	local cd
 	local now
 
-	if not spellID then
+	if not spellID or not IsSpellKnown(spellID) then
 		return false
 	end
 
