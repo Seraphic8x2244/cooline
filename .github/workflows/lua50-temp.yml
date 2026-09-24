@@ -1,0 +1,34 @@
+name: Temporary Lua 5.0.2 check
+
+on:
+  push:
+    branches:
+      - dev
+
+permissions:
+  contents: read
+
+jobs:
+  lua50:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build official Lua 5.0.2 compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://www.lua.org/ftp/lua-5.0.2.tar.gz -o /tmp/lua-5.0.2.tar.gz
+          echo "a6c85d85f912e1c321723084389d63dee7660b81b8292452b190ea7190dd73bc  /tmp/lua-5.0.2.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/lua-5.0.2.tar.gz -C /tmp
+          LUA=/tmp/lua-5.0.2
+          cc -O2 -fcommon -DLUA_OPNAMES -I"$LUA/include" -I"$LUA/src"             "$LUA/src/lapi.c" "$LUA/src/lcode.c" "$LUA/src/ldebug.c"             "$LUA/src/ldo.c" "$LUA/src/ldump.c" "$LUA/src/lfunc.c"             "$LUA/src/lgc.c" "$LUA/src/llex.c" "$LUA/src/lmem.c"             "$LUA/src/lobject.c" "$LUA/src/lopcodes.c" "$LUA/src/lparser.c"             "$LUA/src/lstate.c" "$LUA/src/lstring.c" "$LUA/src/ltable.c"             "$LUA/src/ltm.c" "$LUA/src/lundump.c" "$LUA/src/lvm.c"             "$LUA/src/lzio.c" "$LUA/src/lib/lauxlib.c"             "$LUA/src/luac/luac.c" "$LUA/src/luac/print.c" -lm -o /tmp/luac50
+          /tmp/luac50 -v
+      - name: Compile addon Lua
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/luac50 -p -- Cooline.lua
+          find locales -type f -name '*.lua' -print0 | while IFS= read -r -d '' file; do
+            /tmp/luac50 -p -- "$file"
+          done
