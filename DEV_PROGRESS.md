@@ -3,13 +3,13 @@
 ## Current
 - Branch: `dev`.
 - Version: `3.0.5-dev` in `Cooline.toc`.
-- Current dev branch head before this status commit: `065fa6c8f73306ca48909688b55ce27042a487a4` (`Remove temporary Lua 5.0.2 check`). Current runtime implementation: `08fa2ffae9a8390f5b014e9a00f92beb261c84f0` (`Limit ambiguous item action fallback scans`). `3.0.5-dev` changes only the ambiguous action-bar item fallback scheduling; exact item/spell tracking, renderer, filters, shared-cooldown selection and UI are unchanged. The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
+- Current dev branch head before this status commit: `f3905695f3b7678471dfb13f3fa629b9099a9932`; the only movement after the previous handoff was the canonical `dev_rulebook.md` update, so the tested addon product remains the `3.0.5-dev` runtime implementation at `08fa2ffae9a8390f5b014e9a00f92beb261c84f0`, with checked cleanup at `065fa6c8f73306ca48909688b55ce27042a487a4`. The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
 - Stable release: `2.1.2` on `main` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505` (`Release Cooline 2.1.2`). Its `Cooline.lua` blob exactly matches the user-tested final native runtime.
 - Permanent native preservation branch: `native-2.1` at the exact same stable commit `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`.
 - The planned lightweight tag `v2.1.2` is not yet created because the available GitHub connector exposes branch/ref movement but not tag creation. Do not misstate it as existing.
 - ClassicAPI audit source: `Seraphic8x2244/ClassicAPI` `master` at `7ab32df2aadc2171100aac859154085fcaed56b2`. **Scope boundary:** ClassicAPI is an external dependency/audit source for Cooline; do not edit the ClassicAPI repository as part of Cooline development unless the user explicitly opens that separate scope.
 - Goal: develop `3.0.x` as a ClassicAPI-required architectural rewrite while preserving the tested renderer/UI/SavedVariables behaviour from stable native `2.1.2`.
-- Current scope boundary: 2.1 is finished/released/preserved. 3.0 Stage 3 is now at `3.0.5-dev`. `3.0.4-dev` passed the exercised runtime gate. `3.0.5-dev` keeps the external ClassicAPI bag-instance identity limitation but narrows Cooline's fallback cost: unresolved action-bar item intents no longer trigger a full bag/equipment scan every 0.10 seconds for the whole one-second intent window. Normal item events can reconcile immediately, with one final broad discovery pass at the existing intent deadline as recovery.
+- Current scope boundary: 2.1 is finished/released/preserved. 3.0 Stage 3 is at `3.0.5-dev`, and the current runtime gate is user-verified for the exercised paths. The fallback-cost cleanup keeps the external ClassicAPI bag-instance identity limitation but removes repeated 0.10-second broad scans: unresolved action-bar item intents use normal item events plus one final broad discovery pass at the existing one-second intent deadline.
 
 ## Current Design / Development Contract
 
@@ -235,12 +235,13 @@ Smallest complete strategy with the current APIs:
 - Quantitative CPU/performance improvement remains unmeasured; do not convert the functional pass into a numerical performance claim.
 
 ### Current Runtime Test — ClassicAPI Stage 3
-- Last user-tested build: **`3.0.4-dev`**, runtime implementation `b328f7b45261767fb913441e156663beed2fcfe7`, product-identical checked cleanup head before later documentation/rulebook commits `630705170670209c4476ecd68296a4e6e9a57241`.
-- Passed on `3.0.4-dev`: spell cooldowns; item/trinket cooldowns; potion/consumable cooldown; failed-cast pulse; `/reload` reconstruction; instance zoning/loading-screen reconstruction; action-bar macro `/use 13`; direct item placed on an action-bar slot; and shared-cooldown identity selecting the item actually used.
-- Not exercised: direct ITEM binding / `C_Item.UseItemByName`; SCRM/pfUI conditional `/use` route (user does not currently have one available). These are untested coverage, not failures.
-- **Current untested build:** `3.0.5-dev` at runtime implementation `08fa2ffae9a8390f5b014e9a00f92beb261c84f0`, checked cleanup `065fa6c8f73306ca48909688b55ce27042a487a4`. Delta: unresolved action-bar item intents use normal event-driven item reconciliation plus one final broad recovery scan at the existing one-second intent deadline, instead of broad rescans every 0.10 seconds throughout the window.
+- Current user-tested build: **`3.0.5-dev`**, runtime implementation `08fa2ffae9a8390f5b014e9a00f92beb261c84f0`, checked cleanup `065fa6c8f73306ca48909688b55ce27042a487a4`.
+- User runtime pass after the `3.0.5-dev` handoff: an SCRM macro firing `/use 13` from the pfUI action bar worked, exercising the equipped-item exact route through the supported SCRM/pfUI path; a raw item placed directly on the action bar also worked, exercising the unresolved bag-instance fallback path.
+- This confirms the `3.0.5-dev` fallback scheduling cleanup did not break either the exact equipped-use route or the direct action-bar item route.
+- Previously passed on the same 3.0 line: spell cooldowns; item/trinket cooldowns; potion/consumable cooldown; failed-cast pulse; `/reload` reconstruction; instance zoning/loading-screen reconstruction; ordinary action-bar `/use 13`; direct action-bar item; and shared-cooldown identity selecting the item actually used.
+- Direct ITEM binding / `C_Item.UseItemByName` remains untested coverage unless independently exercised later. The SCRM/pfUI conditional `/use` path is now represented by the user's SCRM `/use 13` test from the pfUI action bar.
 - Static/compiler state: GitHub Actions run `36075809563` passed the official Lua 5.0.2 compiler check for `Cooline.lua` and all locale files.
-- Runtime status of `3.0.5-dev`: **not yet user-tested**.
+- Runtime gate result: **passed for the requested `3.0.5-dev` paths**. No known regression was reported.
 
 
 ## Planned / Next Work
@@ -278,7 +279,7 @@ Smallest complete strategy with the current APIs:
 11. **Targeted regression/recovery/item gate passed in the current requested test session:** spell cooldowns are appearing again; item/trinket plus potion cooldowns work; failed-cast pulse works; `/reload` and instance zoning reconstruction work; an action-bar `/use 13` macro works; a directly placed action-bar item works; and shared-cooldown identity shows the item actually used as the single representative. The conditional SCRM/pfUI `/use` route and direct ITEM binding remain untested coverage, not known failures. Earlier branch-unverified 3.0 tests do not count.
 12. **Accepted external limitation:** the action-bar bag-instance identity gap belongs to the current ClassicAPI public surface and is not a Cooline repository task. Keep the native discovery fallback for that route; do not edit ClassicAPI from this project.
 13. **Implemented/checked in `3.0.5-dev`:** narrow the unresolved action-bar fallback cost. Ambiguous item actions now rely on normal item cooldown/inventory events for prompt reconciliation and retain one scheduled broad discovery pass at the existing one-second intent deadline, rather than repeatedly scanning every 0.10 seconds. Exact item/name-backed retry behavior is unchanged. Lua 5.0.2 compiler run `36075809563` passed.
-14. **Runtime gate pending for `3.0.5-dev`:** verify a directly placed bag item on an action-bar slot still appears correctly and promptly, including correct representative identity for a shared cooldown if convenient. One ordinary exact path (potion or equipped on-use item) is a useful sanity check because that code should be unchanged.
+14. **Runtime gate passed for `3.0.5-dev`:** the SCRM `/use 13` path from the pfUI action bar worked, and a raw item placed directly on the action bar also worked. Together these cover an exact equipped-item route and the unresolved bag-instance fallback route after the fallback-scheduling cleanup.
 15. Keep `main` on stable `2.1.2` and `native-2.1` unchanged until the 3.0 line is explicitly accepted for promotion.
 
 ## Deferred / Out of Scope
@@ -298,4 +299,4 @@ Smallest complete strategy with the current APIs:
 - The exact stable native commit is already preserved on `native-2.1`. The matching `v2.1.2` tag remains pending because tag creation is unavailable through the current connector; do not claim the tag exists.
 
 ## Exact Next Step
-Runtime-test the exact `3.0.5-dev` build from runtime implementation `08fa2ffae9a8390f5b014e9a00f92beb261c84f0` / checked cleanup `065fa6c8f73306ca48909688b55ce27042a487a4`. Confirm the load message reports `Cooline 3.0.5-dev loaded.`, then use an item placed directly on an action-bar slot and verify its cooldown still appears with the correct item identity. If convenient, repeat with two items sharing a cooldown and confirm only the item actually used is represented. Also sanity-check one unchanged exact route (a potion or equipped on-use item). Do not edit ClassicAPI, do not remove the retained bag-instance fallback, and do not begin another runtime delta until this `3.0.5-dev` gate is user-verified.
+With the `3.0.5-dev` runtime gate now passed, perform a Cooline-only Stage 3 closure review against the documented 3.0 goals and remaining validation debt. Do not edit ClassicAPI and do not make another runtime change merely for cleanup. If the review finds no concrete blocker, prepare the next promotion/release decision from the exact tested `3.0.5-dev` product; direct ITEM binding / `C_Item.UseItemByName` may remain documented validation debt unless a concrete issue requires targeted testing.
