@@ -3,13 +3,13 @@
 ## Current
 - Branch: `dev`.
 - Version: `3.0.5-dev` in `Cooline.toc`.
-- Current dev branch head before this status commit: `f3905695f3b7678471dfb13f3fa629b9099a9932`; the only movement after the previous handoff was the canonical `dev_rulebook.md` update, so the tested addon product remains the `3.0.5-dev` runtime implementation at `08fa2ffae9a8390f5b014e9a00f92beb261c84f0`, with checked cleanup at `065fa6c8f73306ca48909688b55ce27042a487a4`. The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
+- Current dev branch head before this maintenance-status commit: `689fd046d02749e8d49698173141a6d8cca5fa6d`. The stable product is `3.0.5` on `main`; `dev` retains the matching `3.0.5-dev` runtime plus development/status files. The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before any future work.
 - Stable release: `3.0.5` on `main` at `f57e3c4829cc5957e28cb937feb12482c124e6b9` (`Release Cooline 3.0.5`). Its `Cooline.lua` blob `8673209e3f84b0d33fb35616aee719f1b549e601` exactly matches the user-tested `3.0.5-dev` runtime and the Lua 5.0.2-checked blob. Previous native stable `2.1.2` remains preserved on `native-2.1` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`.
 - Permanent native preservation branch: `native-2.1` at the exact same stable commit `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`.
 - The planned lightweight tag `v2.1.2` is not yet created because the available GitHub connector exposes branch/ref movement but not tag creation. Do not misstate it as existing.
 - ClassicAPI audit source: `Seraphic8x2244/ClassicAPI` `master` at `7ab32df2aadc2171100aac859154085fcaed56b2`. **Scope boundary:** ClassicAPI is an external dependency/audit source for Cooline; do not edit the ClassicAPI repository as part of Cooline development unless the user explicitly opens that separate scope.
-- Goal: develop `3.0.x` as a ClassicAPI-required architectural rewrite while preserving the tested renderer/UI/SavedVariables behaviour from stable native `2.1.2`.
-- Current scope boundary: 2.1 is finished and preserved on `native-2.1`. 3.0 Stage 3 is complete and stable `3.0.5` has been promoted to `main`. `dev` remains at the tested `3.0.5-dev` product plus documentation/status files until the next deliberate development build begins.
+- Goal/status: **maintenance mode**. The ClassicAPI-required 3.0 refactor/efficiency pass is complete and released as stable `3.0.5`. Future addon-affecting work should be limited to concrete bug fixes, compatibility issues, or explicitly requested features.
+- Current scope boundary: 2.1 is finished and preserved on `native-2.1`. 3.0 Stage 3 is complete and stable `3.0.5` has been promoted to `main`. The user subsequently loaded the exact non-dev `main` release as `3.0.5` and reported that all looked good. Cooline is now in maintenance mode; `dev` remains at the matching `3.0.5-dev` product plus development/status files until a concrete maintenance task begins.
 
 ## Current Design / Development Contract
 
@@ -245,6 +245,8 @@ Smallest complete strategy with the current APIs:
 - Runtime gate result: **passed for the requested `3.0.5-dev` paths**. No known regression was reported.
 
 
+- **Stable release confirmation:** the user loaded `main` as non-dev `3.0.5` and reported that all looked good. Because the stable release changes only TOC/release documentation/dev-file exclusion relative to the already tested runtime, this confirms the promoted release in the target client as well.
+
 ## Planned / Next Work
 
 ### Stage 1 — Native 2.1 performance release — COMPLETE
@@ -302,4 +304,4 @@ Smallest complete strategy with the current APIs:
 - The exact stable native commit is already preserved on `native-2.1`. The matching `v2.1.2` tag remains pending because tag creation is unavailable through the current connector; do not claim the tag exists.
 
 ## Exact Next Step
-Stable `3.0.5` is released on `main` at `f57e3c4829cc5957e28cb937feb12482c124e6b9`. Do not make another runtime revision merely for cleanup. Leave `dev` at `3.0.5-dev` until a concrete bug, requested feature, or deliberate next development scope requires a new build; before any addon-affecting change, bump the numeric TOC patch version. Keep ClassicAPI external and do not edit it from this project.
+Maintenance mode. Do not start new optimization/refactor work without a concrete reason. If a bug, compatibility issue, or requested feature is reported, begin from stable `3.0.5` on `main` at `f57e3c4829cc5957e28cb937feb12482c124e6b9`, use `dev` for the maintenance build, and bump the numeric TOC patch version before any addon-affecting change. Keep ClassicAPI external and do not edit it from this project.
