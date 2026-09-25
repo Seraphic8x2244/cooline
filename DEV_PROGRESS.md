@@ -4,12 +4,12 @@
 - Branch: `dev`.
 - Version: `3.0.5-dev` in `Cooline.toc`.
 - Current dev branch head before this status commit: `f3905695f3b7678471dfb13f3fa629b9099a9932`; the only movement after the previous handoff was the canonical `dev_rulebook.md` update, so the tested addon product remains the `3.0.5-dev` runtime implementation at `08fa2ffae9a8390f5b014e9a00f92beb261c84f0`, with checked cleanup at `065fa6c8f73306ca48909688b55ce27042a487a4`. The current handoff is the commit containing this file on `dev`; verify the actual remote `dev` head before new work.
-- Stable release: `2.1.2` on `main` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505` (`Release Cooline 2.1.2`). Its `Cooline.lua` blob exactly matches the user-tested final native runtime.
+- Stable release: `3.0.5` on `main` at `f57e3c4829cc5957e28cb937feb12482c124e6b9` (`Release Cooline 3.0.5`). Its `Cooline.lua` blob `8673209e3f84b0d33fb35616aee719f1b549e601` exactly matches the user-tested `3.0.5-dev` runtime and the Lua 5.0.2-checked blob. Previous native stable `2.1.2` remains preserved on `native-2.1` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`.
 - Permanent native preservation branch: `native-2.1` at the exact same stable commit `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`.
 - The planned lightweight tag `v2.1.2` is not yet created because the available GitHub connector exposes branch/ref movement but not tag creation. Do not misstate it as existing.
 - ClassicAPI audit source: `Seraphic8x2244/ClassicAPI` `master` at `7ab32df2aadc2171100aac859154085fcaed56b2`. **Scope boundary:** ClassicAPI is an external dependency/audit source for Cooline; do not edit the ClassicAPI repository as part of Cooline development unless the user explicitly opens that separate scope.
 - Goal: develop `3.0.x` as a ClassicAPI-required architectural rewrite while preserving the tested renderer/UI/SavedVariables behaviour from stable native `2.1.2`.
-- Current scope boundary: 2.1 is finished/released/preserved. 3.0 Stage 3 is at `3.0.5-dev`, and the current runtime gate is user-verified for the exercised paths. The fallback-cost cleanup keeps the external ClassicAPI bag-instance identity limitation but removes repeated 0.10-second broad scans: unresolved action-bar item intents use normal item events plus one final broad discovery pass at the existing one-second intent deadline.
+- Current scope boundary: 2.1 is finished and preserved on `native-2.1`. 3.0 Stage 3 is complete and stable `3.0.5` has been promoted to `main`. `dev` remains at the tested `3.0.5-dev` product plus documentation/status files until the next deliberate development build begins.
 
 ## Current Design / Development Contract
 
@@ -42,7 +42,7 @@
 - The 3.0 design should prefer stable spell/item identifiers from ClassicAPI where available and avoid carrying forward native scan-based inference solely for compatibility.
 
 ### Active Decisions
-- Stable `main` is now `2.1.2` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`; the exact same commit is preserved on `native-2.1`.
+- Stable `main` is now `3.0.5` at `f57e3c4829cc5957e28cb937feb12482c124e6b9`. The previous native `2.1.2` release remains preserved on `native-2.1` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`.
 - `dev` is now the ClassicAPI-required `3.0.x` line. It is not a dual-path compatibility build.
 - ClassicAPI is a hard prerequisite for 3.0. Detect it via `CLASSIC_API_VERSION` and document the dependency explicitly; do not keep broad native scanning merely to support clients without the DLL.
 - Every addon-affecting 3.0 development revision must bump the patch version under the rulebook. Runtime revisions have progressed through `3.0.1-dev`, `3.0.2-dev`, `3.0.3-dev`, and the spell-observation timing fix at `3.0.4-dev`. Continue bumping the patch for every later addon-affecting revision.
@@ -266,7 +266,7 @@ Smallest complete strategy with the current APIs:
 3. **Tag pending tooling:** intended tag is `v2.1.2`; the current GitHub connector does not expose tag creation, so the tag must not be claimed as present.
 4. Treat `native-2.1` as the known-good no-ClassicAPI fallback/reference line. Do not merge 3.x ClassicAPI-required architecture into it.
 
-### Stage 3 — ClassicAPI-required 3.0 — ACTIVE
+### Stage 3 — ClassicAPI-required 3.0 — COMPLETE / RELEASED
 1. **Done:** return to `dev` and start the line at `3.0.0-dev`.
 2. **Done:** audit ClassicAPI spell/item/GUID/event/action/macro surfaces and document the exact item-use route matrix, including the unresolved bag-instance `UseAction` identity gap.
 3. **Done:** first runtime edit bumped to `3.0.1-dev` and added the explicit `## Dependencies: !!!ClassicAPI` contract plus runtime capability validation through `CLASSIC_API_VERSION` and the required API surface.
@@ -283,7 +283,7 @@ Smallest complete strategy with the current APIs:
 14. **Runtime gate passed for `3.0.5-dev`:** the SCRM `/use 13` path from the pfUI action bar worked, and a raw item placed directly on the action bar also worked. Together these cover an exact equipped-item route and the unresolved bag-instance fallback route after the fallback-scheduling cleanup.
 15. **Closure review complete:** no concrete Cooline runtime or architecture blocker remains. `C_Item.UseItemByName` is runtime-covered by both linked and plain-name bag-item `/use` tests. The equipped plain-name `/use vanquished tentacle of c'thun` command reached the equipped item and produced the expected cooldown error because the item was already on cooldown, while `/use 13` already proves the equipped `UseInventoryItem` path during an actual use. The only failed variant was the Ctrl-clicked equipped hyperlink form, which is an SCRM link-resolution quirk rather than a Cooline failure.
 16. **Release documentation cleanup required:** update `README.md` so 3.0 clearly requires ClassicAPI and so cooldown-accuracy wording reflects exact identity on supported routes plus the retained narrow bag-instance fallback.
-17. Keep `main` on stable `2.1.2` and `native-2.1` unchanged until the 3.0 line is explicitly accepted for promotion.
+17. **Released:** stable `3.0.5` is on `main` at `f57e3c4829cc5957e28cb937feb12482c124e6b9`. Release-tree preparation preserved the exact tested runtime/locale/artwork blobs, removed `DEV_PROGRESS.md` and `dev_rulebook.md`, and changed only stable TOC metadata plus release documentation. The release `Cooline.lua` blob exactly matches the user-tested and Lua 5.0.2-checked `3.0.5-dev` blob.
 
 ## Deferred / Out of Scope
 - UI redesign or unrelated feature additions during the 2.1 performance pass.
@@ -294,12 +294,12 @@ Smallest complete strategy with the current APIs:
 - New debug tooling unless required to validate the performance/runtime rewrite.
 
 ## Release / Promotion Notes
-- Stable `main` is `2.1.2` at `d4fc1a5a0c697cdc8d7534a2942f6fa2dc94c505`; do not develop 3.0 directly on `main`.
-- Current main-only/release-only content: no extra main-only files. Stable `main` intentionally contains only `Cooline.lua`, stable `Cooline.toc`, `README.md`, `artwork/` and `locales/`; preserve stable TOC Title/Version metadata and do not copy development docs to `main`.
+- Stable `main` is `3.0.5` at `f57e3c4829cc5957e28cb937feb12482c124e6b9`; active development remains on `dev`.
+- Stable `main` intentionally contains only `Cooline.lua`, stable `Cooline.toc`, `README.md`, `artwork/` and `locales/`; `DEV_PROGRESS.md` and `dev_rulebook.md` remain dev-only.
 - Known 2.0 validation debt: timeline-overlay, font-preview, locale-filter migration, non-English cooldown-failure matching, opacity clamping and supported-locale behaviour were not each individually/exhaustively exercised in every path or locale before/after the accepted 2.0.0 release. This is historical release provenance, not scheduled maintenance work.
 - 2.1 must remain installable without ClassicAPI or any other DLL/client extension.
 - 3.0 will require ClassicAPI; that dependency is a deliberate major-version boundary.
 - The exact stable native commit is already preserved on `native-2.1`. The matching `v2.1.2` tag remains pending because tag creation is unavailable through the current connector; do not claim the tag exists.
 
 ## Exact Next Step
-Prepare 3.0 release documentation and promotion review without changing runtime behavior: update `README.md` to state that Cooline 3.0 requires ClassicAPI and to describe current item-cooldown accuracy/fallback behavior honestly, then compare the exact tested `3.0.5-dev` product against current `main` and identify the precise stable-tree changes needed for promotion. Do not edit ClassicAPI. Do not make another runtime change unless a concrete blocker is discovered during release-tree review.
+Stable `3.0.5` is released on `main` at `f57e3c4829cc5957e28cb937feb12482c124e6b9`. Do not make another runtime revision merely for cleanup. Leave `dev` at `3.0.5-dev` until a concrete bug, requested feature, or deliberate next development scope requires a new build; before any addon-affecting change, bump the numeric TOC patch version. Keep ClassicAPI external and do not edit it from this project.
