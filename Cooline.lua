@@ -150,7 +150,16 @@ local function CapturePendingItem(name, texture, itemID, itemGUID, ambiguous)
 		time = now,
 	}
 
-	bar.itemRetryAt = pendingItemUse.time
+	-- Exact/name-backed intents retry promptly because their identity can be
+	-- queried directly. A bag-instance action with no itemID cannot: normal
+	-- item cooldown/inventory events will reconcile it as they arrive, with
+	-- one final broad discovery pass at the existing intent deadline instead
+	-- of rescanning every 0.10 seconds for the whole window.
+	if pendingItemUse.ambiguous then
+		bar.itemRetryAt = pendingItemUse.time + ITEM_INTENT_WINDOW
+	else
+		bar.itemRetryAt = pendingItemUse.time
+	end
 	if initialised and RefreshRuntimeDriver then
 		RefreshRuntimeDriver()
 	end
@@ -1764,10 +1773,20 @@ local function RuntimeOnUpdate()
 		bar.itemRetryAt = nil
 		if pendingItemUse and pendingItemUse.itemID then
 			TryExactPendingItemCooldown()
+		elseif pendingItemUse and pendingItemUse.ambiguous then
+			-- The unresolved action-bar route gets one scheduled broad
+			-- discovery pass. Any normal item event may already have reconciled
+			-- it sooner; avoid duplicating that work in the same frame.
+			if not reconciledItems then
+				ReconcileItemCooldowns()
+			end
+			pendingItemUse = nil
+			bar.itemRetryAt = nil
 		elseif not reconciledItems then
 			ReconcileItemCooldowns()
 		end
-		if pendingItemUse and (now - pendingItemUse.time) <= ITEM_INTENT_WINDOW then
+		if pendingItemUse and not pendingItemUse.ambiguous and
+		   (now - pendingItemUse.time) <= ITEM_INTENT_WINDOW then
 			bar.itemRetryAt = now + 0.10
 		end
 	end
