@@ -1,6 +1,7 @@
-# Cooline
+# Cooline 3.0
 
 A lightweight cooldown timeline addon for **World of Warcraft 1.12.1**, based on the original [Cooline by shirsig](https://github.com/shirsig/cooline).
+Cooline 3.0 is a re-write of my 2.0 version with ClassicAPI as a requirement for use. Use the `native-2.1` branch if you don't use ClassicAPI.
 
 ## About
 
@@ -45,7 +46,7 @@ Development and testing is primarily carried out on Vanilla 1.12.1 private-serve
 
 ### Cooldown Accuracy
 
-The WoW 1.12.1 client provides limited information for identifying some item cooldowns, particularly items which share cooldowns such as potions and on-use trinkets. Cooline uses best-effort tracking, but in some cases the displayed item may not be identified accurately.
+Cooline 3.0 uses ClassicAPI spell and item identity on the supported use routes. One Vanilla action-bar bag-instance format can still surface without an itemID; Cooline keeps a narrow fallback for that case. Shared-cooldown testing confirms that when exact identity is available, Cooline keeps the item actually used as the displayed representative.
 
 ## Credits
 

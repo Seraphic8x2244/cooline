@@ -3,6 +3,36 @@ local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version") or "Unknown"
 local L = CoolineLocale and CoolineLocale.Text or function(text) return text end
 local locale = CoolineLocale and CoolineLocale.GetLocale and CoolineLocale.GetLocale() or (GetLocale and GetLocale()) or "enUS"
 
+local function HasRequiredClassicAPI()
+	return type(CLASSIC_API_VERSION) == "number" and
+	       type(C_Item) == "table" and
+	       type(C_Item.GetItemID) == "function" and
+	       type(C_Item.GetItemGUID) == "function" and
+	       type(C_Item.GetItemName) == "function" and
+	       type(C_Item.GetItemNameByID) == "function" and
+	       type(C_Item.GetItemIcon) == "function" and
+	       type(C_Item.GetItemIconByID) == "function" and
+	       type(C_Item.GetItemInfoInstant) == "function" and
+	       type(C_Item.UseItemByName) == "function" and
+	       type(C_Spell) == "table" and
+	       type(C_Spell.GetSpellCooldown) == "function" and
+	       type(C_Spell.GetSpellName) == "function" and
+	       type(C_Spell.GetSpellTexture) == "function" and
+	       type(GetItemCooldown) == "function" and
+	       type(GetActionInfo) == "function" and
+	       type(GetSpellInfo) == "function" and
+	       type(IsSpellKnown) == "function"
+end
+
+if not HasRequiredClassicAPI() then
+	if DEFAULT_CHAT_FRAME then
+		DEFAULT_CHAT_FRAME:AddMessage(
+			"|cffff2020Cooline " .. ADDON_VERSION .. " requires a current ClassicAPI build.|r"
+		)
+	end
+	return
+end
+
 local DEFAULTS = {
 	length = 360,
 	width = 18,
@@ -67,6 +97,7 @@ local ApplyBarLockState
 local UpdateMinimapButton
 local optionsFrame
 local pendingItemUse
+local pendingSpellUse
 local itemCooldownLocks = {}
 local spellFilterSets = { blacklist = {}, whitelist = {} }
 local itemFilterSets = { blacklist = {}, whitelist = {} }
@@ -82,18 +113,53 @@ local pendingItemReconcile = false
 local RefreshRuntimeDriver
 local RebuildSpellbookCache
 
-local function CapturePendingItem(name, texture)
-	if not name or name == "" then
+local function MakeCooldownSignature(startTime, duration)
+	if not startTime or not duration then
+		return nil
+	end
+
+	return tostring(floor(startTime * 10 + 0.5)) .. ":" ..
+	       tostring(floor(duration * 10 + 0.5))
+end
+
+local function CapturePendingItem(name, texture, itemID, itemGUID, ambiguous)
+	local now
+	local preStart, preDuration, preEnabled
+	local preCooldownSignature
+
+	if (not name or name == "") and not itemID and not ambiguous then
 		return
+	end
+
+	now = GetTime()
+	if itemID then
+		preStart, preDuration, preEnabled = GetItemCooldown(itemID)
+		if preEnabled == 1 and preDuration and preDuration > 2.5 and preStart and
+		   (preStart + preDuration) > now then
+			preCooldownSignature = MakeCooldownSignature(preStart, preDuration)
+		end
 	end
 
 	pendingItemUse = {
 		name = name,
 		texture = texture,
-		time = GetTime(),
+		itemID = itemID,
+		itemGUID = itemGUID,
+		ambiguous = ambiguous and true or nil,
+		preCooldownSignature = preCooldownSignature,
+		time = now,
 	}
 
-	bar.itemRetryAt = pendingItemUse.time
+	-- Exact/name-backed intents retry promptly because their identity can be
+	-- queried directly. A bag-instance action with no itemID cannot: normal
+	-- item cooldown/inventory events will reconcile it as they arrive, with
+	-- one final broad discovery pass at the existing intent deadline instead
+	-- of rescanning every 0.10 seconds for the whole window.
+	if pendingItemUse.ambiguous then
+		bar.itemRetryAt = pendingItemUse.time + ITEM_INTENT_WINDOW
+	else
+		bar.itemRetryAt = pendingItemUse.time
+	end
 	if initialised and RefreshRuntimeDriver then
 		RefreshRuntimeDriver()
 	end
@@ -460,17 +526,70 @@ local function SafeItemName(link)
 	return name
 end
 
+local function ResolveItemIDFromInfo(itemInfo)
+	local itemID = C_Item.GetItemInfoInstant(itemInfo)
+	local _, link
+
+	if itemID then
+		return itemID
+	end
+
+	if type(itemInfo) == "string" then
+		_, link = GetItemInfo(itemInfo)
+		if link then
+			return C_Item.GetItemInfoInstant(link)
+		end
+	end
+
+	return nil
+end
+
+local function CaptureItemID(itemID, itemGUID, name, texture)
+	local resolvedName = name
+	local resolvedTexture = texture
+
+	if not itemID then
+		return false
+	end
+
+	if not resolvedName then
+		resolvedName = C_Item.GetItemNameByID(itemID)
+	end
+	if not resolvedName then
+		resolvedName = GetItemInfo(itemID)
+	end
+	if not resolvedTexture then
+		resolvedTexture = C_Item.GetItemIconByID(itemID)
+	end
+
+	CapturePendingItem(resolvedName, resolvedTexture, itemID, itemGUID)
+	return true
+end
+
+local function CaptureItemLocation(location, fallbackName, fallbackTexture)
+	local itemID = C_Item.GetItemID(location)
+	local itemGUID
+	local name
+	local texture
+
+	if not itemID then
+		return false
+	end
+
+	itemGUID = C_Item.GetItemGUID(location)
+	name = C_Item.GetItemName(location) or fallbackName
+	texture = C_Item.GetItemIcon(location) or fallbackTexture
+	return CaptureItemID(itemID, itemGUID, name, texture)
+end
+
+-- Location-backed calls are captured before execution: the item may be consumed
+-- or moved, so a post-hook can lose the only exact GUID/location evidence.
 local OriginalUseContainerItem = UseContainerItem
 if OriginalUseContainerItem then
 	UseContainerItem = function(bag, slot, onSelf)
+		local location = { bagID = bag, slotIndex = slot }
 		local link = GetContainerItemLink(bag, slot)
-		local name = SafeItemName(link)
-		local texture = GetContainerItemInfo(bag, slot)
-
-		if name then
-			CapturePendingItem(name, texture)
-		end
-
+		CaptureItemLocation(location, SafeItemName(link), GetContainerItemInfo(bag, slot))
 		return OriginalUseContainerItem(bag, slot, onSelf)
 	end
 end
@@ -478,15 +597,48 @@ end
 local OriginalUseInventoryItem = UseInventoryItem
 if OriginalUseInventoryItem then
 	UseInventoryItem = function(slot)
+		local location = { equipmentSlotIndex = slot }
 		local link = GetInventoryItemLink("player", slot)
-		local name = SafeItemName(link)
-		local texture = GetInventoryItemTexture("player", slot)
+		CaptureItemLocation(location, SafeItemName(link), GetInventoryItemTexture("player", slot))
+		return OriginalUseInventoryItem(slot)
+	end
+end
 
-		if name then
-			CapturePendingItem(name, texture)
+-- C_Item.UseItemByName bypasses UseContainerItem. Capture before execution so
+-- the last copy of a consumable cannot disappear before Cooline records intent.
+-- ClassicAPI ITEM bindings and supported conditional/custom /use paths call this
+-- table function, so the wrapper covers them without parsing macro text.
+local OriginalUseItemByName = C_Item.UseItemByName
+C_Item.UseItemByName = function(itemInfo, unit)
+	local itemID = ResolveItemIDFromInfo(itemInfo)
+
+	if itemID then
+		CaptureItemID(itemID)
+	elseif type(itemInfo) == "string" then
+		CapturePendingItem(itemInfo)
+	end
+
+	return OriginalUseItemByName(itemInfo, unit)
+end
+
+-- Capture action identity before execution for the same reason: a consumed
+-- bag-instance action can disappear or change before a post-hook runs.
+local OriginalUseAction = UseAction
+if OriginalUseAction then
+	UseAction = function(slot, checkCursor, onSelf)
+		local actionType, itemID = GetActionInfo(slot)
+
+		if actionType == "item" then
+			if itemID then
+				CaptureItemID(itemID)
+			else
+				-- Current ClassicAPI exposes "item", nil for bag-instance
+				-- actions. Keep the native scan fallback for this exact gap.
+				CapturePendingItem(nil, nil, nil, nil, true)
+			end
 		end
 
-		return OriginalUseInventoryItem(slot)
+		return OriginalUseAction(slot, checkCursor, onSelf)
 	end
 end
 
@@ -942,10 +1094,13 @@ RebuildSpellbookCache = function()
 			spellbookCache[i] = entry
 		end
 
+		local _, _, _, _, _, _, _, _, _, spellID = GetSpellInfo(i, BOOKTYPE_SPELL)
 		entry.id = i
+		entry.spellID = spellID
 		entry.name = name
 		entry.upperName = name and strupper(name) or nil
-		entry.texture = name and GetSpellTexture(i, BOOKTYPE_SPELL) or nil
+		entry.texture = spellID and C_Spell.GetSpellTexture(spellID) or
+		                (name and GetSpellTexture(i, BOOKTYPE_SPELL) or nil)
 	end
 
 	for i = count + 1, oldCount do
@@ -1049,6 +1204,174 @@ local function DeactivateCooldown(key, cd)
 	cd.pulseStart = nil
 end
 
+local function ApplyExactSpellCooldown(spellID, spellName)
+	local info
+	local name
+	local key
+	local cd
+	local now
+
+	if not spellID or not IsSpellKnown(spellID) then
+		return false
+	end
+
+	info = C_Spell.GetSpellCooldown(spellID)
+	if not info then
+		return false
+	end
+
+	name = spellName or C_Spell.GetSpellName(spellID)
+	now = GetTime()
+	if not name or not SpellAllowed(name) or not info.isEnabled or
+	   not info.duration or info.duration <= 2.5 or
+	   not info.startTime or (info.startTime + info.duration) <= now then
+		return false
+	end
+
+	key = "spell:" .. name
+	cd = EnsureCooldown(key)
+	cd.spellID = spellID
+	cd.startTime = info.startTime
+	cd.duration = info.duration
+	cd.endTime = info.startTime + info.duration
+	cd.icon:SetTexture(C_Spell.GetSpellTexture(spellID))
+	cd:SetBackdropColor(0.8, 0.4, 0, 1)
+	ActivateCooldown(key, cd)
+	return true
+end
+
+local function TryPendingExactSpellCooldown()
+	local intent = pendingSpellUse
+	local now = GetTime()
+
+	if not intent then
+		return false
+	end
+
+	if ApplyExactSpellCooldown(intent.spellID, intent.spellName) then
+		pendingSpellUse = nil
+		bar.spellRetryAt = nil
+		return true
+	end
+
+	if (now - intent.time) > 1.0 then
+		pendingSpellUse = nil
+		bar.spellRetryAt = nil
+		-- Exact success identity was preserved, but the cooldown never became
+		-- visible through the direct query. Keep one spellbook reconciliation
+		-- as a recovery backstop rather than losing the cooldown entirely.
+		pendingSpellReconcile = true
+		RefreshRuntimeDriver()
+		return true
+	end
+
+	return false
+end
+
+local function CapturePendingSpellCooldown(spellID, spellName)
+	if not spellID or not IsSpellKnown(spellID) then
+		return
+	end
+
+	pendingSpellUse = {
+		spellID = spellID,
+		spellName = spellName,
+		time = GetTime(),
+	}
+	bar.spellRetryAt = pendingSpellUse.time
+
+	TryPendingExactSpellCooldown()
+	RefreshRuntimeDriver()
+end
+
+local function RefreshActiveSpellCooldowns()
+	local key, cd
+	local info
+	local now = GetTime()
+
+	for key, cd in pairs(activeCooldowns) do
+		if string.sub(key, 1, 6) == "spell:" and cd.spellID then
+			info = C_Spell.GetSpellCooldown(cd.spellID)
+			if info and info.isEnabled and info.duration and info.duration > 2.5 and
+			   info.startTime and (info.startTime + info.duration) > now then
+				cd.startTime = info.startTime
+				cd.duration = info.duration
+				cd.endTime = info.startTime + info.duration
+			else
+				DeactivateCooldown(key, cd)
+			end
+		end
+	end
+
+	RefreshRuntimeDriver()
+end
+
+local function TryExactPendingItemCooldown()
+	local intent = pendingItemUse
+	local now = GetTime()
+	local startTime, duration, enabled
+	local name
+	local texture
+	local signature
+	local key
+	local cd
+	local unchangedActive = false
+
+	if not intent or not intent.itemID then
+		return false
+	end
+
+	startTime, duration, enabled = GetItemCooldown(intent.itemID)
+	if enabled == 1 and duration and duration > 2.5 and startTime and
+	   (startTime + duration) > now then
+		signature = MakeCooldownSignature(startTime, duration)
+		unchangedActive = intent.preCooldownSignature and
+		                  signature == intent.preCooldownSignature
+
+		if not unchangedActive then
+			name = intent.name or C_Item.GetItemNameByID(intent.itemID)
+			texture = intent.texture or C_Item.GetItemIconByID(intent.itemID)
+
+			if name then
+				itemCooldownLocks[signature] = name
+
+				if ItemAllowed(name) then
+					key = "item:" .. name
+					cd = EnsureCooldown(key)
+					cd.itemID = intent.itemID
+					cd.itemGUID = intent.itemGUID
+					cd.startTime = startTime
+					cd.duration = duration
+					cd.endTime = startTime + duration
+					cd.icon:SetTexture(texture)
+					cd:SetBackdropColor(0, 0, 0, 1)
+					ActivateCooldown(key, cd)
+				end
+
+				pendingItemUse = nil
+				bar.itemRetryAt = nil
+				return true
+			end
+		end
+	end
+
+	if (now - intent.time) > ITEM_INTENT_WINDOW then
+		pendingItemUse = nil
+		bar.itemRetryAt = nil
+
+		-- If the exact item API never exposed a new cooldown, preserve one
+		-- legacy discovery pass as a transitional safety net. Do not rescan
+		-- when the item was already on the same cooldown before the attempt.
+		if not unchangedActive then
+			pendingItemReconcile = true
+			RefreshRuntimeDriver()
+		end
+		return true
+	end
+
+	return false
+end
+
 local function AddItemCandidate(candidateCount, itemName, itemTexture, startValue, durationValue)
 	local candidate
 	local signature
@@ -1057,8 +1380,7 @@ local function AddItemCandidate(candidateCount, itemName, itemTexture, startValu
 		return candidateCount
 	end
 
-	signature = tostring(floor((startValue or 0) * 10 + 0.5)) .. ":" ..
-	            tostring(floor((durationValue or 0) * 10 + 0.5))
+	signature = MakeCooldownSignature(startValue or 0, durationValue or 0)
 
 	candidateCount = candidateCount + 1
 	candidate = itemCandidates[candidateCount]
@@ -1126,7 +1448,8 @@ local function ScanItems(seen)
 	end
 
 	-- Highest priority: exact Vanilla use intent captured before cooldown begins.
-	if pendingItemUse and (now - pendingItemUse.time) <= ITEM_INTENT_WINDOW then
+	if pendingItemUse and pendingItemUse.name and
+	   (now - pendingItemUse.time) <= ITEM_INTENT_WINDOW then
 		for i = 1, candidateCount do
 			candidate = itemCandidates[i]
 
@@ -1249,13 +1572,18 @@ local function ReconcileSpellCooldowns()
 		entry = spellbookCache[i]
 		spellName = entry.name
 
-		if spellName then
-			startTime, duration, enabled = GetSpellCooldown(entry.id, BOOKTYPE_SPELL)
+		if spellName and entry.spellID then
+			local info = C_Spell.GetSpellCooldown(entry.spellID)
 
-			if SpellAllowed(spellName) and enabled == 1 and duration and duration > 2.5 then
-				if (startTime + duration) > now then
+			if SpellAllowed(spellName) and info and info.isEnabled and
+			   info.duration and info.duration > 2.5 then
+				startTime = info.startTime
+				duration = info.duration
+				enabled = info.isEnabled and 1 or 0
+				if startTime and (startTime + duration) > now then
 					key = "spell:" .. spellName
 					cd = EnsureCooldown(key)
+					cd.spellID = entry.spellID
 					cd.startTime = startTime
 					cd.duration = duration
 					cd.endTime = startTime + duration
@@ -1433,12 +1761,32 @@ local function RuntimeOnUpdate()
 	end
 
 	now = GetTime()
+	if bar.spellRetryAt and now >= bar.spellRetryAt then
+		bar.spellRetryAt = nil
+		TryPendingExactSpellCooldown()
+		if pendingSpellUse and (now - pendingSpellUse.time) <= 1.0 then
+			bar.spellRetryAt = now + 0.05
+		end
+	end
+
 	if bar.itemRetryAt and now >= bar.itemRetryAt then
 		bar.itemRetryAt = nil
-		if not reconciledItems then
+		if pendingItemUse and pendingItemUse.itemID then
+			TryExactPendingItemCooldown()
+		elseif pendingItemUse and pendingItemUse.ambiguous then
+			-- The unresolved action-bar route gets one scheduled broad
+			-- discovery pass. Any normal item event may already have reconciled
+			-- it sooner; avoid duplicating that work in the same frame.
+			if not reconciledItems then
+				ReconcileItemCooldowns()
+			end
+			pendingItemUse = nil
+			bar.itemRetryAt = nil
+		elseif not reconciledItems then
 			ReconcileItemCooldowns()
 		end
-		if pendingItemUse and (now - pendingItemUse.time) <= ITEM_INTENT_WINDOW then
+		if pendingItemUse and not pendingItemUse.ambiguous and
+		   (now - pendingItemUse.time) <= ITEM_INTENT_WINDOW then
 			bar.itemRetryAt = now + 0.10
 		end
 	end
@@ -1451,7 +1799,8 @@ end
 
 RefreshRuntimeDriver = function()
 	local hasActive = next(activeCooldowns) ~= nil
-	local needsDriver = hasActive or bar.itemRetryAt ~= nil or pendingSpellReconcile or pendingItemReconcile
+	local needsDriver = hasActive or bar.spellRetryAt ~= nil or bar.itemRetryAt ~= nil or
+	                    pendingSpellReconcile or pendingItemReconcile
 
 	if bar.activeVisual ~= hasActive then
 		UpdateBarAlpha(hasActive)
@@ -3098,12 +3447,13 @@ local function OnVariablesLoaded()
 	BuildMinimapButton()
 	ReconcileAllCooldowns()
 
+	bar:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 	bar:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 	bar:RegisterEvent("SPELLS_CHANGED")
 	bar:RegisterEvent("CHAT_MSG_SPELL_FAILED_LOCALPLAYER")
 	bar:RegisterEvent("BAG_UPDATE_COOLDOWN")
-	bar:RegisterEvent("BAG_UPDATE")
-	bar:RegisterEvent("UNIT_INVENTORY_CHANGED")
+	bar:RegisterEvent("BAG_UPDATE_DELAYED")
+	bar:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 	bar:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 	DEFAULT_CHAT_FRAME:AddMessage(
@@ -3121,14 +3471,28 @@ bar:SetScript("OnEvent", function()
 		if failedSpell then
 			TriggerCooldownPulse(failedSpell)
 		end
+	elseif initialised and event == "UNIT_SPELLCAST_SUCCEEDED" then
+		if arg1 == "player" and arg3 then
+			CapturePendingSpellCooldown(arg3, arg4)
+		end
 	elseif initialised and event == "SPELL_UPDATE_COOLDOWN" then
-		QueueSpellReconcile()
+		if pendingSpellUse then
+			TryPendingExactSpellCooldown()
+		end
+		RefreshActiveSpellCooldowns()
 	elseif initialised and event == "SPELLS_CHANGED" then
 		spellbookDirty = true
 		QueueSpellReconcile()
-	elseif initialised and (event == "BAG_UPDATE_COOLDOWN" or event == "BAG_UPDATE" or event == "UNIT_INVENTORY_CHANGED") then
-		QueueItemReconcile()
+	elseif initialised and (event == "BAG_UPDATE_COOLDOWN" or event == "BAG_UPDATE_DELAYED" or event == "PLAYER_EQUIPMENT_CHANGED") then
+		if pendingItemUse and pendingItemUse.itemID then
+			bar.itemRetryAt = GetTime()
+			RefreshRuntimeDriver()
+		else
+			QueueItemReconcile()
+		end
 	elseif initialised and event == "PLAYER_ENTERING_WORLD" then
+		pendingSpellUse = nil
+		bar.spellRetryAt = nil
 		pendingSpellReconcile = false
 		pendingItemReconcile = false
 		spellbookDirty = true
