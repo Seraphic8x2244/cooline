@@ -1,6 +1,7 @@
-# Cooline
+# Cooline 3.0
 
 A lightweight cooldown timeline addon for **World of Warcraft 1.12.1**, based on the original [Cooline by shirsig](https://github.com/shirsig/cooline).
+This branch is a re-write of my 2.0 version of Cooline with classicAPI.dll as a requirement for use. Clone the 2.1 branch if you don't use classicAPI.
 
 ## About
 
